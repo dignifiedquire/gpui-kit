@@ -58,10 +58,9 @@ gpui-shell = { path = "crates/shell", version = "0.9.0" }
 gpui-webview = { path = "crates/webview", version = "0.9.0" }
 story = { path = "crates/story" }
 
-# Delta Chat fork: GPUI comes from the Zed fork dignifiedquire/zed, branch
-# `dc/main`, not from the `gpui-pre-*` snapshots. Applications must name the same
-# git source, or Cargo builds two GPUIs. `reqwest` must stay on the revision
-# Zed's workspace pins.
+# This fork builds GPUI from the Zed fork dignifiedquire/zed, branch `dc/main`.
+# Applications must name the same git source, or Cargo builds two GPUIs.
+# `reqwest` must stay on the revision Zed's workspace pins.
 gpui = { git = "https://github.com/dignifiedquire/zed", branch = "dc/main" }
 gpui_platform = { git = "https://github.com/dignifiedquire/zed", branch = "dc/main", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
 gpui_web = { git = "https://github.com/dignifiedquire/zed", branch = "dc/main" }
