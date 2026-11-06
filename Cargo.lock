@@ -314,7 +314,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -325,7 +325,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -836,7 +836,7 @@ dependencies = [
 [[package]]
 name = "bench_metrics"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "criterion",
@@ -862,7 +862,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1199,7 +1199,7 @@ dependencies = [
  "maybe-owned",
  "rustix",
  "rustix-linux-procfs",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
  "winx",
 ]
 
@@ -1512,7 +1512,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "gpui_util",
  "indexmap",
@@ -2422,7 +2422,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2511,7 +2511,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2827,7 +2827,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3824,7 +3824,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -4817,7 +4817,7 @@ dependencies = [
 [[package]]
 name = "gpui_apple"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "async-task",
@@ -4856,7 +4856,7 @@ dependencies = [
 [[package]]
 name = "gpui_ios"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "block2 0.6.2",
@@ -4877,7 +4877,7 @@ dependencies = [
 [[package]]
 name = "gpui_linux"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -4921,7 +4921,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -4961,7 +4961,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -4972,7 +4972,7 @@ dependencies = [
 [[package]]
 name = "gpui_platform"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -4988,7 +4988,7 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "schemars",
  "serde",
@@ -4998,7 +4998,7 @@ dependencies = [
 [[package]]
 name = "gpui_util"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "log",
@@ -5008,7 +5008,7 @@ dependencies = [
 [[package]]
 name = "gpui_web"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -5037,7 +5037,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -5064,7 +5064,7 @@ dependencies = [
 [[package]]
 name = "gpui_windows"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -5422,7 +5422,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5440,7 +5440,7 @@ dependencies = [
 [[package]]
 name = "http_client_tls"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "log",
  "rustls",
@@ -7104,7 +7104,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.5.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -8827,7 +8827,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9187,7 +9187,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "derive_refineable",
 ]
@@ -9254,7 +9254,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 [[package]]
 name = "reqwest_client"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "anyhow",
  "bytes",
@@ -9516,7 +9516,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9594,7 +9594,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9678,7 +9678,7 @@ dependencies = [
 [[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "async-task",
  "backtrace",
@@ -10074,7 +10074,7 @@ version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32824fab5e16e6c4d86dc1ba84489390419a39f97699852b66480bb87d297ed8"
 dependencies = [
- "dirs 6.0.0",
+ "dirs 5.0.1",
 ]
 
 [[package]]
@@ -10268,7 +10268,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -10444,7 +10444,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "heapless",
  "rayon",
@@ -10737,10 +10737,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11717,7 +11717,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -12791,7 +12791,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -14107,7 +14107,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[package]]
 name = "ztracing"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 dependencies = [
  "tracing",
  "ztracing_macro",
@@ -14116,7 +14116,7 @@ dependencies = [
 [[package]]
 name = "ztracing_macro"
 version = "0.1.0"
-source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#f816e1f9263e3a8ef63c4baaa02e1441ce1c6038"
+source = "git+https://github.com/dignifiedquire/zed?branch=dc%2Fmain#145bcfc1bc3a9c6963a13c634df0fa4efc6b522e"
 
 [[package]]
 name = "zune-core"
