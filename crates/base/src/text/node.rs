@@ -20,11 +20,11 @@ use crate::{
     scrollable_mask::horizontal_scroll_area,
     text::{
         CodeBlockActionsFn, CodeBlockHighlighterFn, LinkClickHandlerFn, MarkdownExtensions,
-        MarkdownNode, TableActionsFn,
+        MarkdownNode, TableActionsFn, TaskToggleEvent, TaskToggleHandlerFn,
         document::{NodeRenderOptions, PrevBlock, flow_position},
         inline::{
             Inline, InlineHighlight, InlineState, code_insets, combine_highlights, fade_highlights,
-            point_in_text_selection, text_runs, text_size_ranges,
+            foreground_highlights, point_in_text_selection, text_runs, text_size_ranges,
         },
         inline_flow::{InlineFlow, InlineFlowItem, slice_ranges},
         range_highlight::{RangeHighlightFrame, RevealAt, RevealRequest},
@@ -79,6 +79,8 @@ pub enum BlockNode {
         spread: bool,
         /// Whether the list item is checked, if None, it's not a checkbox
         checked: Option<bool>,
+        /// The source of a Markdown task item's `[ ]` / `[x]` marker.
+        task_marker: Option<Span>,
         span: Option<Span>,
     },
     CodeBlock(CodeBlock),
@@ -1039,6 +1041,7 @@ fn set_leaf_key(state: &mut Arc<Mutex<InlineState>>, key: u64) {
     *state = Arc::new(Mutex::new(InlineState {
         text,
         editor_key: Some(key),
+        selection_rows: None,
         cleanup_senders: Vec::new(),
         ..Default::default()
     }));
@@ -1637,7 +1640,12 @@ impl Paragraph {
         {
             return (
                 cached.text.clone(),
-                cached.highlights.clone(),
+                foreground_highlights(
+                    cached.highlights.clone(),
+                    &cached.text,
+                    0,
+                    node_cx.foregrounds(self.leaf_key()),
+                ),
                 cached.links.clone(),
             );
         }
@@ -1674,6 +1682,8 @@ impl Paragraph {
                 links: links.clone(),
             }));
         }
+        let highlights =
+            foreground_highlights(highlights, &text, 0, node_cx.foregrounds(self.leaf_key()));
         (text, highlights, links)
     }
 
@@ -2678,11 +2688,14 @@ pub(crate) struct NodeContext {
     pub(crate) table_actions: Option<Arc<TableActionsFn>>,
     pub(crate) image_source: Option<Arc<super::text_view::ImageSourceFn>>,
     pub(crate) link_click_handler: Option<Arc<LinkClickHandlerFn>>,
+    pub(crate) task_toggle_handler: Option<Arc<TaskToggleHandlerFn>>,
     pub(crate) markdown_extensions: Arc<MarkdownExtensions>,
     /// This frame's streamed fade-in, when any text is still fading.
     pub(crate) stream_fade: Option<Arc<StreamFadeFrame>>,
     /// The application's range highlights, when there are any.
     pub(crate) range_highlights: Option<Arc<RangeHighlightFrame>>,
+    /// Render-local glyph colors supplied by an external editor, keyed by leaf.
+    pub(crate) foregrounds: Option<Arc<HashMap<u64, Vec<(Range<usize>, Hsla)>>>>,
     /// The line being scrolled into view, when there is one.
     pub(crate) reveal: Option<RevealRequest>,
     /// The font size the text view inherits this frame, or zero when not
@@ -2691,6 +2704,11 @@ pub(crate) struct NodeContext {
 }
 
 impl NodeContext {
+    fn foregrounds(&self, key: Option<u64>) -> &[(Range<usize>, Hsla)] {
+        key.and_then(|key| self.foregrounds.as_ref()?.get(&key))
+            .map_or(&[], Vec::as_slice)
+    }
+
     fn image_source(&self, image: &ImageNode) -> ImageSource {
         match &self.image_source {
             Some(resolve) => resolve(&image.url),
@@ -2860,7 +2878,7 @@ impl Paragraph {
 
         if self.should_render_inline_flow() {
             return InlineFlow::new(
-                leaf_element_id(fade_key),
+                self.element_id(fade_key),
                 self.inline_flow_items(fade_key, fades, backgrounds, node_cx, cx),
                 node_cx.link_click_handler.clone(),
             )
@@ -3041,9 +3059,26 @@ impl Paragraph {
         }
 
         div()
-            .id(leaf_element_id(fade_key))
+            .id(self.element_id(fade_key))
             .children(child_nodes)
             .into_any_element()
+    }
+
+    /// The element id of this paragraph when it needs one: an inline flow,
+    /// whose objects are accessibility nodes, or an image, whose element
+    /// state is its animation. The leaf key is unique per paragraph in a
+    /// parsed Markdown document. The HTML parser records no spans, so its
+    /// paragraphs fall back to an id derived from their own render state:
+    /// sharing one name mounted every span-less flow under the same id, and
+    /// the flows read each other's cached layout.
+    fn element_id(&self, fade_key: Option<TextLeafKey>) -> ElementId {
+        match fade_key {
+            Some(key) => ElementId::from(key),
+            None => ElementId::NamedInteger(
+                "p".into(),
+                Arc::as_ptr(&self.state) as *const () as usize as u64,
+            ),
+        }
     }
 
     /// The key an external editor gave this leaf, if any.
@@ -3223,6 +3258,37 @@ impl Paragraph {
             });
         }
 
+        let foregrounds = node_cx.foregrounds(self.leaf_key());
+        if !foregrounds.is_empty() {
+            let mut offset = 0;
+            for item in &mut items {
+                match item {
+                    InlineFlowItem::Text {
+                        text, highlights, ..
+                    } => {
+                        *highlights = foreground_highlights(
+                            std::mem::take(highlights),
+                            text,
+                            offset,
+                            foregrounds,
+                        );
+                        offset += text.len();
+                    }
+                    InlineFlowItem::Object { style, .. } => {
+                        let end = offset + '\u{FFFC}'.len_utf8();
+                        if let Some((_, color)) = foregrounds
+                            .iter()
+                            .rev()
+                            .find(|(range, _)| range.start <= offset && end <= range.end)
+                        {
+                            style.color = Some(*color);
+                        }
+                        offset = end;
+                    }
+                    InlineFlowItem::Image { .. } => offset += '\u{FFFC}'.len_utf8(),
+                }
+            }
+        }
         items
     }
 }
@@ -3233,14 +3299,6 @@ impl Paragraph {
 /// their siblings: unique among them, though not across nesting levels.
 fn block_element_id(kind: &'static str, span: Option<Span>, ix: usize) -> ElementId {
     (kind, span.map_or(ix, |span| span.start)).into()
-}
-
-/// The element id of a paragraph that needs one: an inline flow, whose
-/// objects are accessibility nodes, or an image, whose element state is its
-/// animation. The leaf key is unique per paragraph in a parsed Markdown
-/// document; the HTML parser records no spans, so its paragraphs share one.
-fn leaf_element_id(fade_key: Option<TextLeafKey>) -> ElementId {
-    fade_key.map_or_else(|| ElementId::from("p"), ElementId::from)
 }
 
 /// A link's underline: a hairline in a translucent link color, so a run of
@@ -3682,11 +3740,15 @@ impl BlockNode {
 }
 
 impl BlockNode {
+    /// `task_toggle` is the view's task toggle handler with the event a click
+    /// on the item's checkbox reports, when the checkbox should be clickable.
+    #[allow(clippy::too_many_arguments)]
     fn render_list_item_row(
         content: AnyElement,
         ix: usize,
         options: NodeRenderOptions,
         checked: Option<bool>,
+        task_toggle: Option<(Arc<TaskToggleHandlerFn>, TaskToggleEvent)>,
         style: &TextViewStyle,
         line_height: Pixels,
         indent: Pixels,
@@ -3760,7 +3822,18 @@ impl BlockNode {
                                         .size(rems(0.75)),
                                     )
                                 }),
-                        ),
+                        )
+                        .map(|checkbox| match task_toggle {
+                            Some((handler, event)) => checkbox
+                                .id(("task-toggle", event.item_range().start))
+                                .on_click(move |_, window, cx| {
+                                    crate::TextSelection::end(window, cx);
+                                    cx.stop_propagation();
+                                    handler(&event, window, cx);
+                                })
+                                .into_any_element(),
+                            None => checkbox.into_any_element(),
+                        }),
                 )
             })
             .child(
@@ -3791,10 +3864,22 @@ impl BlockNode {
                 children,
                 spread,
                 checked,
-                ..
+                task_marker,
+                span,
             } => {
                 let body = body_font_size(node_cx, window);
                 let indent = body * 1.4;
+                let task_toggle = match (&node_cx.task_toggle_handler, checked, span, task_marker) {
+                    (Some(handler), Some(checked), Some(item), Some(marker)) => Some((
+                        handler.clone(),
+                        TaskToggleEvent::new(
+                            !checked,
+                            item.start..item.end,
+                            marker.start..marker.end,
+                        ),
+                    )),
+                    _ => None,
+                };
                 div()
                     .w_full()
                     .min_w_0()
@@ -3848,6 +3933,7 @@ impl BlockNode {
                                         ix,
                                         options,
                                         *checked,
+                                        task_toggle.clone(),
                                         &node_cx.style,
                                         window.line_height(),
                                         indent,
@@ -3891,6 +3977,7 @@ impl BlockNode {
                                             ix,
                                             options,
                                             *checked,
+                                            task_toggle.clone(),
                                             &node_cx.style,
                                             window.line_height(),
                                             indent,
@@ -4060,6 +4147,9 @@ impl BlockNode {
             .into_any_element()
         } else {
             div()
+                // Scopes the row ids to this table, as the scroll area's id
+                // does, so rows of two tables never share hover state.
+                .id(block_element_id("table", table.span, options.ix))
                 .w_full()
                 .overflow_hidden()
                 .refine_style(&frame)
@@ -4191,8 +4281,17 @@ impl BlockNode {
                             .min_w(px(column.min))
                             .max_w(px(column.max))
                             .overflow_hidden()
-                            .when(align == ColumnumnAlign::Center, |this| this.text_center())
-                            .when(align == ColumnumnAlign::Right, |this| this.text_right())
+                            // Align the content box, not its text: GPUI
+                            // paints `text_align` with an offset that
+                            // `TextLayout` hit-testing leaves out, so
+                            // aligned text could not be selected where it
+                            // shows.
+                            .when(align == ColumnumnAlign::Center, |this| {
+                                this.flex().flex_col().items_center()
+                            })
+                            .when(align == ColumnumnAlign::Right, |this| {
+                                this.flex().flex_col().items_end()
+                            })
                             .px_3()
                             .py(px(7.))
                             .refine_style(&style.table_cell())
@@ -4211,6 +4310,9 @@ impl BlockNode {
             }
             rows.push(
                 div()
+                    // GPUI keys hover state by element id, so each row needs
+                    // its own for its hover highlight to follow the pointer.
+                    .id(("row", row_ix))
                     .w_full()
                     .when(row_ix < row_count - 1, |this| this.border_b_1())
                     .border_color(style.border())
@@ -4230,6 +4332,11 @@ impl BlockNode {
                         this.when_some(bottom_left, |this, radius| this.rounded_bl(radius))
                             .when_some(bottom_right, |this, radius| this.rounded_br(radius))
                     })
+                    // Body rows only: the header keeps its own fill.
+                    .when_some(
+                        style.table_row_hover().filter(|_| row_ix > 0),
+                        |this, color| this.hover(|this| this.bg(color)),
+                    )
                     .children(cells)
                     .into_any_element(),
             );
@@ -4473,6 +4580,154 @@ impl BlockNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_foregrounds_follow_the_render_context_without_entering_the_paragraph_cache() {
+        let mut app = gpui::TestApp::new();
+        let mut window = app.open_window(|_, _| gpui::Empty);
+        window.update(|_, _, cx| {
+            cx.set_global(crate::Theme::default());
+            let link = LinkMark {
+                url: "https://example.com".into(),
+                ..Default::default()
+            };
+            let mut paragraph = Paragraph::default().with_leaf_key(7);
+            paragraph.push(InlineNode::new("a中😀link").marks(vec![
+                (0..12, TextMark::default().bold()),
+                (1..12, TextMark::default().italic().link(link.clone())),
+            ]));
+            let original = paragraph.clone();
+            let base = NodeContext::default();
+            let (_, inherited, _) = paragraph.plain_render(&base, cx);
+            let cached = paragraph.render_cache.0.lock().unwrap().clone().unwrap();
+            for color in [gpui::red(), gpui::blue()] {
+                let context = NodeContext {
+                    foregrounds: Some(Arc::new(HashMap::from([(7, vec![(0..12, color)])]))),
+                    ..base.clone()
+                };
+                let (text, highlights, links) = paragraph.plain_render(&context, cx);
+                assert_eq!(text.as_ref(), "a中😀link");
+                assert_eq!(links, vec![(1..12, link.clone())]);
+                assert!(highlights.iter().all(|(_, h)| h.style.color == Some(color)));
+                assert!(
+                    highlights
+                        .iter()
+                        .all(|(_, h)| h.style.font_weight == Some(FontWeight::BOLD))
+                );
+                assert!(
+                    highlights
+                        .iter()
+                        .filter(|(r, _)| r.start >= 1)
+                        .all(|(_, h)| h.style.font_style == Some(FontStyle::Italic)
+                            && h.style.underline.is_some())
+                );
+                assert!(Arc::ptr_eq(
+                    &cached,
+                    paragraph.render_cache.0.lock().unwrap().as_ref().unwrap()
+                ));
+            }
+            // Clearing a context's ranges restores inherited mark/link colors,
+            // even though the document and cached mark styles are unchanged.
+            let context = NodeContext {
+                foregrounds: Some(Arc::new(HashMap::from([(7, vec![])]))),
+                ..base.clone()
+            };
+            assert_eq!(paragraph.plain_render(&context, cx).1, inherited);
+            let invalid = NodeContext {
+                foregrounds: Some(Arc::new(HashMap::from([(7, vec![(2..3, gpui::red())])]))),
+                ..base.clone()
+            };
+            assert_eq!(paragraph.plain_render(&invalid, cx).1, inherited);
+            let other_leaf = NodeContext {
+                foregrounds: Some(Arc::new(HashMap::from([(8, vec![(0..12, gpui::red())])]))),
+                ..base
+            };
+            assert_eq!(paragraph.plain_render(&other_leaf, cx).1, inherited);
+            assert_eq!(paragraph, original);
+        });
+    }
+
+    #[test]
+    fn host_foregrounds_override_mixed_links_and_preserve_atom_byte_coordinates() {
+        let mut app = gpui::TestApp::new();
+        let mut window = app.open_window(|_, _| gpui::Empty);
+        window.update(|_, _, cx| {
+            cx.set_global(crate::Theme::default());
+            let link = LinkMark {
+                url: "https://example.com".into(),
+                ..Default::default()
+            };
+            let mut paragraph = Paragraph::default().with_leaf_key(7);
+            paragraph.push(InlineNode::new("a中😀link").marks(vec![
+                (0..12, TextMark::default().bold()),
+                (1..12, TextMark::default().link(link.clone())),
+                (4..8, TextMark::default().code()),
+            ]));
+            paragraph.push(
+                InlineNode::custom(MarkdownNode::new("atom", ()).text("long fallback"))
+                    .marks(vec![(0..13, TextMark::default().link(link.clone()))]),
+            );
+            paragraph.push(InlineNode::new("尾"));
+            paragraph.push(InlineNode::image(ImageNode::default()));
+            paragraph.push(InlineNode::new("z"));
+            let context = NodeContext {
+                foregrounds: Some(Arc::new(HashMap::from([(
+                    7,
+                    vec![
+                        (0..22, gpui::red()),
+                        (15..18, gpui::blue()),
+                        (21..22, gpui::blue()),
+                    ],
+                )]))),
+                ..Default::default()
+            };
+            let items = paragraph.inline_flow_items(None, &[], &[], &context, cx);
+            assert_eq!(items.len(), 5);
+            let InlineFlowItem::Text {
+                text,
+                highlights,
+                links,
+                ..
+            } = &items[0]
+            else {
+                panic!("text");
+            };
+            assert_eq!(text.as_ref(), "a中😀link");
+            assert_eq!(links, &vec![(1..12, link.clone())]);
+            assert!(
+                highlights
+                    .iter()
+                    .all(|(_, h)| h.style.color == Some(gpui::red()))
+            );
+            assert!(
+                highlights
+                    .iter()
+                    .any(|(r, h)| r.start == 4 && h.code_style.is_some())
+            );
+            let InlineFlowItem::Object {
+                style,
+                link: actual_link,
+                ..
+            } = &items[1]
+            else {
+                panic!("object");
+            };
+            assert_eq!(style.color, Some(gpui::red()));
+            assert_eq!(actual_link.as_ref(), Some(&link));
+            assert!(style.underline.is_some());
+            for ix in [2, 4] {
+                let InlineFlowItem::Text { highlights, .. } = &items[ix] else {
+                    panic!("trailing text");
+                };
+                assert!(
+                    highlights
+                        .iter()
+                        .all(|(_, h)| h.style.color == Some(gpui::blue()))
+                );
+                assert!(!highlights.is_empty());
+            }
+        });
+    }
 
     #[test]
     fn block_plugin_selection_copies_both_formats_and_clears_synchronously() {
@@ -5382,6 +5637,7 @@ mod tests {
             children: vec![BlockNode::Paragraph(selected_paragraph(text))],
             spread: false,
             checked: None,
+            task_marker: None,
             span: None,
         };
         let unselected_item = BlockNode::ListItem {
@@ -5390,6 +5646,7 @@ mod tests {
             ]))],
             spread: false,
             checked: None,
+            task_marker: None,
             span: None,
         };
         let list = BlockNode::List {
@@ -5407,6 +5664,7 @@ mod tests {
             children: vec![BlockNode::Paragraph(selected_paragraph(text))],
             spread: false,
             checked: None,
+            task_marker: None,
             span: None,
         };
         let list = BlockNode::List {
@@ -5472,12 +5730,14 @@ mod tests {
                     children: vec![BlockNode::Paragraph(selected_paragraph("one"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("two"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -5499,12 +5759,14 @@ mod tests {
                     children: vec![BlockNode::Paragraph(selected_paragraph("three"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("four"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -5527,12 +5789,14 @@ mod tests {
                     children: vec![BlockNode::Paragraph(selected_paragraph("nested"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("again"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -5546,12 +5810,14 @@ mod tests {
                     children: vec![BlockNode::Paragraph(selected_paragraph("three")), nested],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("four"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -5573,12 +5839,14 @@ mod tests {
                     ],
                     spread: true,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("four"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -5602,6 +5870,7 @@ mod tests {
                 children: vec![BlockNode::Paragraph(selected_paragraph("nested"))],
                 spread: false,
                 checked: None,
+                task_marker: None,
                 span: None,
             }],
         };
@@ -5614,12 +5883,14 @@ mod tests {
                     children: vec![BlockNode::Paragraph(selected_paragraph("one")), nested],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("two"))],
                     spread: false,
                     checked: None,
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -5641,12 +5912,14 @@ mod tests {
                     children: vec![BlockNode::Paragraph(selected_paragraph("done"))],
                     spread: false,
                     checked: Some(true),
+                    task_marker: None,
                     span: None,
                 },
                 BlockNode::ListItem {
                     children: vec![BlockNode::Paragraph(selected_paragraph("todo"))],
                     spread: false,
                     checked: Some(false),
+                    task_marker: None,
                     span: None,
                 },
             ],
@@ -6102,12 +6375,14 @@ mod tests {
                             children: vec![BlockNode::Paragraph(selected_paragraph("one"))],
                             spread: false,
                             checked: None,
+                            task_marker: None,
                             span: None,
                         },
                         BlockNode::ListItem {
                             children: vec![BlockNode::Paragraph(selected_paragraph("two"))],
                             spread: false,
                             checked: None,
+                            task_marker: None,
                             span: None,
                         },
                     ],
