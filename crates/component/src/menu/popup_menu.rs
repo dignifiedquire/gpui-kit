@@ -1272,7 +1272,8 @@ impl PopupMenu {
             Icon::empty()
         };
 
-        Some(icon.xsmall())
+        // The icon takes the label's text size, as the symbols in macOS menus do.
+        Some(icon.small())
     }
 
     /// Calculate the anchor corner and left offset for child submenu
