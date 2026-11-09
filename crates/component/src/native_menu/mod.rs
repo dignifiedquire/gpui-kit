@@ -205,6 +205,10 @@ impl NativeMenu {
 
         #[cfg(target_os = "macos")]
         {
+            // AppKit places the menu in view points, which GPUI's window zoom
+            // leaves unscaled. gpui-fast has no window zoom.
+            #[cfg(not(feature = "gpui-fast"))]
+            let position = position * window.zoom_factor();
             macos::show(self.items, cx.asset_source().clone(), position, window, cx);
         }
         #[cfg(target_os = "windows")]
