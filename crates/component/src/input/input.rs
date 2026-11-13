@@ -46,6 +46,107 @@ fn is_native_touch_selection(cx: &App) -> bool {
         .is_some_and(|native| native.0)
 }
 
+/// Labels of the edit menu items of text fields. An item without one shows
+/// GPUI Kit's own translation.
+#[derive(Clone, Default)]
+pub struct EditMenuLabels {
+    look_up: Option<SharedString>,
+    cut: Option<SharedString>,
+    copy: Option<SharedString>,
+    paste: Option<SharedString>,
+    select_all: Option<SharedString>,
+}
+
+impl EditMenuLabels {
+    /// Creates labels showing GPUI Kit's own translations.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the label of Look Up, where `%{text}` stands for the looked-up text.
+    pub fn with_look_up(mut self, label: impl Into<SharedString>) -> Self {
+        self.look_up = Some(label.into());
+        self
+    }
+
+    /// Sets the label of Cut.
+    pub fn with_cut(mut self, label: impl Into<SharedString>) -> Self {
+        self.cut = Some(label.into());
+        self
+    }
+
+    /// Sets the label of Copy.
+    pub fn with_copy(mut self, label: impl Into<SharedString>) -> Self {
+        self.copy = Some(label.into());
+        self
+    }
+
+    /// Sets the label of Paste.
+    pub fn with_paste(mut self, label: impl Into<SharedString>) -> Self {
+        self.paste = Some(label.into());
+        self
+    }
+
+    /// Sets the label of Select All.
+    pub fn with_select_all(mut self, label: impl Into<SharedString>) -> Self {
+        self.select_all = Some(label.into());
+        self
+    }
+
+    /// Returns the label of Look Up on `text`.
+    pub fn look_up(&self, text: &str) -> SharedString {
+        match &self.look_up {
+            Some(label) => label.replace("%{text}", text).into(),
+            None => t!("Input.Look Up", text = text).into(),
+        }
+    }
+
+    /// Returns the label of Cut.
+    pub fn cut(&self) -> SharedString {
+        self.cut.clone().unwrap_or_else(|| t!("Input.Cut").into())
+    }
+
+    /// Returns the label of Copy.
+    pub fn copy(&self) -> SharedString {
+        self.copy.clone().unwrap_or_else(|| t!("Input.Copy").into())
+    }
+
+    /// Returns the label of Paste.
+    pub fn paste(&self) -> SharedString {
+        self.paste
+            .clone()
+            .unwrap_or_else(|| t!("Input.Paste").into())
+    }
+
+    /// Returns the label of Select All.
+    pub fn select_all(&self) -> SharedString {
+        self.select_all
+            .clone()
+            .unwrap_or_else(|| t!("Input.Select All").into())
+    }
+}
+
+struct AppEditMenuLabels(EditMenuLabels);
+
+impl Global for AppEditMenuLabels {}
+
+/// Sets the labels of the edit menus of text fields: the context menu of an
+/// [`Input`] and the menu of a touch selection.
+///
+/// An application translating its own text sets them again after each switch
+/// of its language.
+pub fn set_edit_menu_labels(labels: EditMenuLabels, cx: &mut App) {
+    cx.set_global(AppEditMenuLabels(labels));
+    cx.refresh_windows();
+}
+
+/// Returns the labels set with [`set_edit_menu_labels`], or GPUI Kit's own.
+pub fn edit_menu_labels(cx: &App) -> EditMenuLabels {
+    cx.try_global::<AppEditMenuLabels>()
+        .map(|labels| labels.0.clone())
+        .unwrap_or_default()
+}
+
 fn accessibility_role(
     is_multi_line: bool,
     content_type: Option<InputContentType>,
@@ -461,6 +562,7 @@ impl Input {
         let pasteable = editable;
         let selectable = state.text(cx).len() > 0 && !state.is_all_selected(cx);
         let focus_handle = state.presentation(cx).focus_handle().clone();
+        let labels = edit_menu_labels(cx);
 
         let dispatch = {
             let focus_handle = focus_handle.clone();
@@ -471,30 +573,29 @@ impl Input {
         let mut items = Vec::with_capacity(4);
         if editable && copyable {
             let dispatch = dispatch.clone();
-            items.push(EditMenuItem::new(t!("Input.Cut"), move |window, cx| {
+            items.push(EditMenuItem::new(labels.cut(), move |window, cx| {
                 dispatch(&gpui_base::input::Cut, window, cx);
             }));
         }
         if copyable {
             let dispatch = dispatch.clone();
             let state = state.clone();
-            items.push(EditMenuItem::new(t!("Input.Copy"), move |window, cx| {
+            items.push(EditMenuItem::new(labels.copy(), move |window, cx| {
                 dispatch(&gpui_base::input::Copy, window, cx);
                 state.close_edit_menu(cx);
             }));
         }
         if pasteable {
             let dispatch = dispatch.clone();
-            items.push(EditMenuItem::new(t!("Input.Paste"), move |window, cx| {
+            items.push(EditMenuItem::new(labels.paste(), move |window, cx| {
                 dispatch(&gpui_base::input::Paste, window, cx);
             }));
         }
         if selectable {
             let state = state.clone();
-            items.push(EditMenuItem::new(
-                t!("Input.Select All"),
-                move |window, cx| state.select_all_from_edit_menu(window, cx),
-            ));
+            items.push(EditMenuItem::new(labels.select_all(), move |window, cx| {
+                state.select_all_from_edit_menu(window, cx)
+            }));
         }
 
         let drag_state = state.clone();
@@ -643,13 +744,14 @@ impl RenderOnce for Input {
                     // A read-only input can still navigate the code, it only
                     // rejects the items that would change the text.
                     let editable = enabled && !capabilities.is_readonly();
+                    let labels = edit_menu_labels(cx);
                     let mut menu = NativeMenu::new();
                     // The menu of a macOS text view starts with Look Up.
                     #[cfg(target_os = "macos")]
                     if let Some(text) = looked_up.look_up_text(cx) {
                         menu = menu
                             .menu(
-                                t!("Input.Look Up", text = look_up_label(&text)),
+                                labels.look_up(&look_up_label(&text)),
                                 Box::new(gpui_base::input::LookUp),
                             )
                             .separator();
@@ -669,12 +771,12 @@ impl RenderOnce for Input {
                             .separator();
                     }
                     menu.menu_with_disabled(
-                        t!("Input.Cut"),
+                        labels.cut(),
                         !(editable && capabilities.is_copyable()),
                         Box::new(gpui_base::input::Cut),
                     )
                     .menu_with_disabled(
-                        t!("Input.Copy"),
+                        labels.copy(),
                         !capabilities.is_copyable(),
                         Box::new(gpui_base::input::Copy),
                     )
@@ -682,15 +784,12 @@ impl RenderOnce for Input {
                     // at the clipboard: the synchronous read is always empty
                     // on the web, and an empty clipboard pastes nothing.
                     .menu_with_disabled(
-                        t!("Input.Paste"),
+                        labels.paste(),
                         !editable,
                         Box::new(gpui_base::input::Paste),
                     )
                     .separator()
-                    .menu(
-                        t!("Input.Select All"),
-                        Box::new(gpui_base::input::SelectAll),
-                    )
+                    .menu(labels.select_all(), Box::new(gpui_base::input::SelectAll))
                 };
                 menu.show(position, window, cx);
             }),
@@ -905,6 +1004,29 @@ mod tests {
             look_up_label("the quick brown fox jumps over the lazy dog"),
             "the quick brown fox jump…"
         );
+    }
+
+    #[gpui::test]
+    fn edit_menu_shows_the_app_labels_or_else_kits_own(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let labels = edit_menu_labels(cx);
+            assert_eq!(labels.look_up("delta"), "Look Up “delta”");
+            assert_eq!(labels.cut(), "Cut");
+            assert_eq!(labels.select_all(), "Select All");
+
+            let labels = EditMenuLabels::new()
+                .with_look_up("„%{text}“ nachschlagen")
+                .with_cut("Ausschneiden")
+                .with_copy("Kopieren")
+                .with_select_all("Alles auswählen");
+            set_edit_menu_labels(labels, cx);
+            let labels = edit_menu_labels(cx);
+            assert_eq!(labels.look_up("delta"), "„delta“ nachschlagen");
+            assert_eq!(labels.cut(), "Ausschneiden");
+            assert_eq!(labels.copy(), "Kopieren");
+            assert_eq!(labels.paste(), "Paste");
+            assert_eq!(labels.select_all(), "Alles auswählen");
+        });
     }
 
     #[test]
