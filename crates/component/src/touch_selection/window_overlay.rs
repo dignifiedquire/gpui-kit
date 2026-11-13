@@ -2,9 +2,9 @@ use gpui::{
     App, ClipboardItem, Context, IntoElement, ParentElement as _, Render, Subscription, Window, div,
 };
 use gpui_base::TextSelection;
-use rust_i18n::t;
 
 use super::{EditMenuItem, TouchSelectionOverlay};
+use crate::input::edit_menu_labels;
 
 /// Draws the handles and the edit menu of the window text selection — the one
 /// a [`crate::text::TextView`] takes part in. [`crate::Root`] mounts one per
@@ -48,12 +48,13 @@ impl Render for WindowTouchSelectionOverlay {
         }
         // The handles are painted by the text that owns them, where they
         // are covered by whatever covers the text; only the menu floats.
+        let labels = edit_menu_labels(cx);
         let overlay = TouchSelectionOverlay::new("window-touch-selection", |window, cx| {
             TextSelection::touch_selection(window, cx)
         })
         .items([
-            EditMenuItem::new(t!("Input.Copy"), Self::copy),
-            EditMenuItem::new(t!("Input.Select All"), Self::select_all),
+            EditMenuItem::new(labels.copy(), Self::copy),
+            EditMenuItem::new(labels.select_all(), Self::select_all),
         ])
         .on_paint(|bounds, window, cx| TextSelection::register_touch_ui(bounds, window, cx));
         div().children(overlay.into_elements(window, cx))
