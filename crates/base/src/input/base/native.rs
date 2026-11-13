@@ -2,14 +2,15 @@
 mod macos {
     use std::{cell::RefCell, collections::HashMap, mem, ptr, sync::Once};
 
-    use gpui::Window;
+    use gpui::{Pixels, Point, Window};
     use objc2::{
-        ffi, msg_send,
+        AnyThread as _, ffi, msg_send,
         rc::Retained,
         runtime::{AnyObject, AnyProtocol, Imp, Sel},
         sel,
     };
-    use objc2_foundation::NSString;
+    use objc2_app_kit::{NSFont, NSFontAttributeName};
+    use objc2_foundation::{NSAttributedString, NSDictionary, NSPoint, NSRect, NSString};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     static INSTALL_TEXT_CONTENT: Once = Once::new();
@@ -40,6 +41,46 @@ mod macos {
 
         unsafe {
             let _: () = msg_send![view, setContentType: ns_content_type];
+        }
+    }
+
+    /// Shows macOS's Look Up popover for `text`, drawn in the system font at
+    /// `font_size` with its baseline origin at `origin`, in window coordinates.
+    pub(crate) fn show_definition(
+        window: &Window,
+        text: &str,
+        origin: Point<Pixels>,
+        font_size: Pixels,
+    ) {
+        let Some(view) = ns_view(window) else {
+            return;
+        };
+        // AppKit takes view points, which GPUI's window zoom leaves unscaled.
+        // gpui-fast has no window zoom.
+        #[cfg(not(feature = "gpui-fast"))]
+        let (origin, font_size) = (
+            origin * window.zoom_factor(),
+            font_size * window.zoom_factor(),
+        );
+        let font = NSFont::systemFontOfSize(f64::from(f32::from(font_size)));
+        let attributes =
+            NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[&*font as &AnyObject]);
+        let string = unsafe {
+            NSAttributedString::initWithString_attributes(
+                NSAttributedString::alloc(),
+                &NSString::from_str(text),
+                Some(&attributes),
+            )
+        };
+        unsafe {
+            // The view is not flipped, so its origin is at the bottom left.
+            let bounds: NSRect = msg_send![view, bounds];
+            let point = NSPoint::new(
+                f64::from(f32::from(origin.x)),
+                bounds.size.height - f64::from(f32::from(origin.y)),
+            );
+            let _: () =
+                msg_send![view, showDefinitionForAttributedString: &*string, atPoint: point];
         }
     }
 
@@ -106,6 +147,8 @@ mod macos {
 
 #[cfg(target_os = "macos")]
 pub use macos::set_text_content_type;
+#[cfg(target_os = "macos")]
+pub(crate) use macos::show_definition;
 
 use gpui::SharedString;
 

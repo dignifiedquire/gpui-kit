@@ -177,6 +177,13 @@ impl TextInputState {
         dispatch!(self, |state| state.read(cx).context_menu_capabilities())
     }
 
+    /// The text Look Up shows the definition of: the selection, or else the
+    /// word at the cursor.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn look_up_text(&self, cx: &App) -> Option<String> {
+        dispatch!(self, |state| state.read(cx).look_up_text())
+    }
+
     /// Whether every character is already selected, so Select All has nothing
     /// left to offer.
     pub(crate) fn is_all_selected(&self, cx: &App) -> bool {
