@@ -3349,7 +3349,11 @@ impl<M: InputModeKind> InputBaseState<M> {
         if !selected.is_empty() {
             return Some(selected);
         }
-        self.text.word_range(self.cursor())
+        // At the end of the text the word ends at the cursor.
+        let cursor = self.cursor();
+        self.text
+            .word_range(cursor)
+            .or_else(|| self.text.word_range(cursor.checked_sub(1)?))
     }
 
     /// The baseline origin of the text at `offset`, in window coordinates,
@@ -7917,6 +7921,9 @@ mod tests {
 
         cx.update(|_, cx| input.update(cx, |state, cx| state.set_selected_range(5..5, cx)));
         assert_eq!(look_up(&mut cx).as_deref(), Some("hello"));
+
+        cx.update(|_, cx| input.update(cx, |state, cx| state.set_selected_range(16..16, cx)));
+        assert_eq!(look_up(&mut cx).as_deref(), Some("chat"));
 
         cx.update(|window, cx| input.update(cx, |state, cx| state.set_masked(true, window, cx)));
         assert_eq!(look_up(&mut cx), None);
