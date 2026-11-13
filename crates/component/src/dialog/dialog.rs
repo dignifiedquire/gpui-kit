@@ -7,7 +7,7 @@ use gpui::{
     Action, Anchor, AnyElement, App, BoxShadow, ClickEvent, Edges, FocusHandle, Hsla,
     InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
     StyleRefinement, Styled, Window, WindowControlArea, anchored, div, hsla, point,
-    prelude::FluentBuilder, px,
+    prelude::FluentBuilder, px, rems,
 };
 use gpui_base::{ElementExt as _, TextSelectionScopeId, motion::Transition};
 use rust_i18n::t;
@@ -19,6 +19,7 @@ use crate::{
     dialog::{DialogContent, DialogDispatchAnchor, DialogTitle},
     scroll::ScrollableElement as _,
     v_flex,
+    whole_pixels::{WholePixelOrigin, to_whole_pixels},
 };
 
 pub static ANIMATION_DURATION: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs_f64(0.25));
@@ -704,6 +705,7 @@ impl RenderOnce for Dialog {
         if let Some(pb) = self.style.padding.bottom {
             paddings.bottom = pb.to_pixels(base_size, rem_size);
         }
+        let title_gap = to_whole_pixels(rems(0.5), window);
 
         // The newest dialog still open owns Escape, the backdrop, and the
         // focus trap; a closing dialog keeps its layer only to finish leaving.
@@ -794,7 +796,7 @@ impl RenderOnce for Dialog {
                                             v_flex()
                                                 .flex_1()
                                                 .overflow_hidden()
-                                                .gap_y_2()
+                                                .gap_y(title_gap)
                                                 .when_some(self.header, |this, header| {
                                                     this.child(
                                                         div()
@@ -894,7 +896,7 @@ impl RenderOnce for Dialog {
                                         .shadow(dialog_shadow(visibility))
                                         .text_selection_scope(selection_scope)
                                         .map(|surface| {
-                                            if entrance == DialogEntrance::FadeSlide {
+                                            let surface = if entrance == DialogEntrance::FadeSlide {
                                                 let mut surface = EntranceSurface::new(
                                                     surface.into_any_element(),
                                                     travel,
@@ -904,7 +906,8 @@ impl RenderOnce for Dialog {
                                                 surface.into_any_element()
                                             } else {
                                                 surface.into_any_element()
-                                            }
+                                            };
+                                            WholePixelOrigin::new(surface)
                                         }),
                                 )
                                 .when(
@@ -1008,6 +1011,21 @@ pub(crate) mod tests {
         let selector = ["dialog-0", "dialog-1"][layer_ix];
         cx.debug_bounds(selector)
             .unwrap_or_else(|| panic!("dialog layer {layer_ix} was not painted"))
+    }
+
+    #[gpui::test]
+    fn a_centred_dialog_of_odd_height_lies_on_whole_pixels(cx: &mut TestAppContext) {
+        let cx = window(cx, size(px(900.), px(760.)));
+        open(cx, |dialog, _, _| {
+            dialog.centered().title("Odd").child(div().h(px(201.)))
+        });
+
+        let bounds = surface(cx, 0);
+        assert_eq!(
+            bounds.origin.y,
+            bounds.origin.y.round(),
+            "a 1 px line on a half pixel renders as two rows at half contrast: {bounds:?}"
+        );
     }
 
     /// The clamp must not touch a dialog that already fits: the default width
