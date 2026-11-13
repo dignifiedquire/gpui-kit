@@ -430,6 +430,8 @@ Input:
     zh-CN: 粘贴
     zh-HK: 貼上
     zh-TW: 貼上
+  Look Up:
+    en: Look Up “%{text}”
   Select All:
     en: Select All
     pt-BR: "Selecionar tudo"

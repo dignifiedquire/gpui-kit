@@ -109,6 +109,7 @@ actions!(
         SelectToPreviousWordStart,
         SelectToNextWordEnd,
         ShowCharacterPalette,
+        LookUp,
         Copy,
         Cut,
         Paste,
@@ -3176,6 +3177,52 @@ impl<M: InputModeKind> InputBaseState<M> {
         window.show_character_palette();
     }
 
+    /// The text Look Up shows the definition of: the selection, or else the
+    /// word at the cursor. A masked value has none.
+    pub fn look_up_text(&self) -> Option<String> {
+        let range = self.look_up_range()?;
+        Some(self.text.slice(range).to_string())
+    }
+
+    fn look_up_range(&self) -> Option<Range<usize>> {
+        if self.masked {
+            return None;
+        }
+        let selected = self.selected_range();
+        if !selected.is_empty() {
+            return Some(selected);
+        }
+        self.text.word_range(self.cursor())
+    }
+
+    /// The baseline origin of the text at `offset`, in window coordinates,
+    /// and its font size.
+    #[cfg(target_os = "macos")]
+    fn baseline_at(&self, offset: usize) -> Option<(Point<Pixels>, Pixels)> {
+        let layout = self.last_layout.as_ref()?;
+        let bounds = self.last_bounds?;
+        let (row, sub_row, position) = self.line_and_position_for_offset(offset);
+        let line = layout.lines.get(row)?.wrapped_lines.get(sub_row)?;
+        let metrics = line.first_shaped()?;
+        let top = (layout.line_height - metrics.ascent - metrics.descent) / 2.;
+        let origin = bounds.origin + position? + point(px(0.), top + metrics.ascent);
+        Some((origin, metrics.font_size))
+    }
+
+    /// Shows the definition of [`Self::look_up_text`] in macOS's Look Up
+    /// popover, over the text. Other platforms have no Look Up.
+    pub(super) fn look_up(&mut self, _: &LookUp, window: &mut Window, _: &mut Context<Self>) {
+        #[cfg(target_os = "macos")]
+        if let Some(range) = self.look_up_range()
+            && let Some((origin, font_size)) = self.baseline_at(range.start)
+        {
+            let text = self.text.slice(range).to_string();
+            super::native::show_definition(window, &text, origin, font_size);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = window;
+    }
+
     /// The text of every non-empty selection, in document order.
     fn selected_texts(&self) -> Vec<String> {
         let mut selections: Vec<CursorSelection> = self
@@ -5240,6 +5287,7 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
             .on_action(window.listener_for(&entity, InputBaseState::select_to_start))
             .on_action(window.listener_for(&entity, InputBaseState::select_to_end))
             .on_action(window.listener_for(&entity, InputBaseState::show_character_palette))
+            .on_action(window.listener_for(&entity, InputBaseState::look_up))
             .on_action({
                 let entity = entity.clone();
                 move |_: &ActivateToken, window, cx| {
@@ -7261,6 +7309,32 @@ mod tests {
             })
         });
         assert_eq!(cursor.get(), Some(2));
+    }
+
+    #[gpui::test]
+    fn look_up_takes_the_selection_or_else_the_word_at_the_cursor(cx: &mut TestAppContext) {
+        cx.update(crate::init);
+        let input_view = InputView::build(cx, |state| state);
+        let mut cx = VisualTestContext::from_window(input_view.window_handle.into(), cx);
+        let input = input_view.input;
+        let look_up = |cx: &mut VisualTestContext| cx.update(|_, cx| input.read(cx).look_up_text());
+
+        cx.update(|window, cx| {
+            input.update(cx, |state, cx| {
+                state.set_value("hello delta chat", window, cx);
+                state.handle_right_click_menu(point(px(0.), px(0.)), 8, window, cx);
+            })
+        });
+        assert_eq!(look_up(&mut cx).as_deref(), Some("delta"));
+
+        cx.update(|_, cx| input.update(cx, |state, cx| state.set_selected_range(12..16, cx)));
+        assert_eq!(look_up(&mut cx).as_deref(), Some("chat"));
+
+        cx.update(|_, cx| input.update(cx, |state, cx| state.set_selected_range(5..5, cx)));
+        assert_eq!(look_up(&mut cx).as_deref(), Some("hello"));
+
+        cx.update(|window, cx| input.update(cx, |state, cx| state.set_masked(true, window, cx)));
+        assert_eq!(look_up(&mut cx), None);
     }
 
     #[gpui::test]

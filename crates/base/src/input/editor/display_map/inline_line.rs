@@ -42,6 +42,15 @@ impl InputLine {
             content: Content::Inline(fragments),
         }
     }
+    /// The line's first shaped text, which holds its font size, ascent and
+    /// descent.
+    pub(crate) fn first_shaped(&self) -> Option<&ShapedLine> {
+        match &self.content {
+            Content::Text(line) => Some(line),
+            Content::Inline(fragments) => fragments.iter().find_map(|f| f.text.as_ref()),
+        }
+    }
+
     pub(crate) fn x_for_index(&self, ix: usize) -> Pixels {
         match &self.content {
             Content::Text(line) => line.x_for_index(ix),

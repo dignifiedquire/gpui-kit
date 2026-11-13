@@ -115,6 +115,23 @@ fn exposes_accessibility_value(content_type: Option<InputContentType>) -> bool {
     )
 }
 
+/// The characters of the looked-up text that Look Up's label shows at most.
+#[cfg(any(target_os = "macos", test))]
+const LOOK_UP_LABEL_CHARS: usize = 24;
+
+/// The looked-up text as Look Up's label quotes it: on one line, and cut short
+/// with an ellipsis, as macOS's text views do.
+#[cfg(any(target_os = "macos", test))]
+fn look_up_label(text: &str) -> String {
+    let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if words.chars().count() <= LOOK_UP_LABEL_CHARS {
+        return words;
+    }
+    let mut label: String = words.chars().take(LOOK_UP_LABEL_CHARS).collect();
+    label.push('…');
+    label
+}
+
 /// Returns `(background, foreground)` colors for input-like components.
 pub(crate) fn input_style(disabled: bool, cx: &App) -> (Hsla, Hsla) {
     if disabled {
@@ -615,6 +632,8 @@ impl RenderOnce for Input {
         state.set_readonly(self.readonly, cx);
         state.set_text_align(text_align, cx);
         let custom = self.context_menu_builder.clone();
+        #[cfg(target_os = "macos")]
+        let looked_up = state.clone();
         state.on_context_menu(
             Rc::new(move |_, capabilities, position, window, cx| {
                 let menu = if let Some(custom) = custom.as_ref() {
@@ -625,6 +644,16 @@ impl RenderOnce for Input {
                     // rejects the items that would change the text.
                     let editable = enabled && !capabilities.is_readonly();
                     let mut menu = NativeMenu::new();
+                    // The menu of a macOS text view starts with Look Up.
+                    #[cfg(target_os = "macos")]
+                    if let Some(text) = looked_up.look_up_text(cx) {
+                        menu = menu
+                            .menu(
+                                t!("Input.Look Up", text = look_up_label(&text)),
+                                Box::new(gpui_base::input::LookUp),
+                            )
+                            .separator();
+                    }
                     if capabilities.is_code_editor() {
                         menu = menu
                             .menu_with_disabled(
@@ -867,6 +896,16 @@ mod tests {
     use super::*;
     use crate::ElementExt as _;
     use crate::input::AnyInputState;
+
+    #[test]
+    fn look_up_label_quotes_the_text_on_one_line_and_cuts_it_short() {
+        assert_eq!(look_up_label("delta"), "delta");
+        assert_eq!(look_up_label("chat\n  app"), "chat app");
+        assert_eq!(
+            look_up_label("the quick brown fox jumps over the lazy dog"),
+            "the quick brown fox jump…"
+        );
+    }
 
     #[test]
     fn content_types_map_to_accessibility_roles() {
