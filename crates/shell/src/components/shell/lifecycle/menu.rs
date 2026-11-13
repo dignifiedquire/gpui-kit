@@ -117,35 +117,29 @@ fn build_menu(spec: &MenuSpec) -> Menu {
         }))
 }
 fn restore_menu(menu: &OwnedMenu) -> Menu {
-    Menu {
-        name: menu.name.clone(),
-        disabled: menu.disabled,
-        items: menu
-            .items
-            .iter()
-            .map(|item| match item {
-                OwnedMenuItem::Separator => MenuItem::Separator,
-                OwnedMenuItem::Submenu(menu) => MenuItem::Submenu(restore_menu(menu)),
-                OwnedMenuItem::SystemMenu(menu) => MenuItem::SystemMenu(gpui::OsMenu {
-                    name: menu.name.clone(),
-                    menu_type: menu.menu_type,
-                }),
-                OwnedMenuItem::Action {
-                    name,
-                    action,
-                    os_action,
-                    checked,
-                    disabled,
-                } => MenuItem::Action {
-                    name: name.clone().into(),
-                    action: action.boxed_clone(),
-                    os_action: *os_action,
-                    checked: *checked,
-                    disabled: *disabled,
-                },
-            })
-            .collect(),
-    }
+    Menu::new(menu.name.clone())
+        .disabled(menu.disabled)
+        .items(menu.items.iter().map(|item| match item {
+            OwnedMenuItem::Separator => MenuItem::Separator,
+            OwnedMenuItem::Submenu(menu) => MenuItem::Submenu(restore_menu(menu)),
+            OwnedMenuItem::SystemMenu(menu) => MenuItem::SystemMenu(gpui::OsMenu {
+                name: menu.name.clone(),
+                menu_type: menu.menu_type,
+            }),
+            OwnedMenuItem::Action {
+                name,
+                action,
+                os_action,
+                checked,
+                disabled,
+            } => MenuItem::Action {
+                name: name.clone().into(),
+                action: action.boxed_clone(),
+                os_action: *os_action,
+                checked: *checked,
+                disabled: *disabled,
+            },
+        }))
 }
 struct BarMaterializer;
 impl ComponentMaterializer for BarMaterializer {
