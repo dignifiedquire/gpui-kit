@@ -19,6 +19,7 @@ mod time;
 mod title_bar;
 mod touch_selection;
 mod virtual_list;
+mod whole_pixels;
 mod window_border;
 mod window_ext;
 

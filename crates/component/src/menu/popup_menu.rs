@@ -3,6 +3,7 @@ use crate::actions::{Cancel, Confirm, SelectDown, SelectUp};
 use crate::actions::{SelectLeft, SelectRight};
 use crate::menu::menu_item::MenuItemElement;
 use crate::scroll::ScrollableElement;
+use crate::whole_pixels::{WholePixelOrigin, to_whole_pixels};
 use crate::{ActiveTheme, ElementExt, Icon, IconName, Sizable as _, h_flex, v_flex};
 use crate::{Side, Size, kbd::Kbd};
 use gpui::{
@@ -1327,19 +1328,23 @@ impl PopupMenu {
         let selected = self.selected_index == Some(ix);
         const EDGE_PADDING: Pixels = px(4.);
         const INNER_PADDING: Rems = rems(0.5);
+        const ICON_GAP: Rems = rems(0.5);
+        const SEPARATOR_MARGIN: Rems = rems(0.25);
+        let inner_padding = to_whole_pixels(INNER_PADDING, window);
+        let icon_gap = to_whole_pixels(ICON_GAP, window);
 
         let is_submenu = matches!(item, PopupMenuItem::Submenu { .. });
 
         let (item_height, radius) = match self.size {
-            Size::Small => (rems(1.25), options.radius.half()),
-            _ => (rems(1.625), options.radius),
+            Size::Small => (to_whole_pixels(rems(1.25), window), options.radius.half()),
+            _ => (to_whole_pixels(rems(1.625), window), options.radius),
         };
 
         let this = MenuItemElement::new(ix)
             .relative()
             .text_sm()
             .py_0()
-            .px(INNER_PADDING)
+            .px(inner_padding)
             .rounded(radius)
             .items_center()
             .selected(selected)
@@ -1373,22 +1378,25 @@ impl PopupMenu {
             );
 
         match item {
+            // A hairline stays 1 px at every rem size.
             PopupMenuItem::Separator => this
-                .h_auto()
+                .h(px(1.))
                 .p_0()
-                .my_0p5()
-                .mx_neg_1()
-                .border_b(px(2.))
-                .border_color(cx.theme().border)
+                .my(to_whole_pixels(SEPARATOR_MARGIN, window))
+                .mx(inner_padding)
+                .rounded_none()
+                .bg(cx.theme().border)
                 .disabled(true),
-            PopupMenuItem::Label(label) => this.disabled(true).cursor_default().child(
-                h_flex()
-                    .cursor_default()
-                    .items_center()
-                    .gap_x_1()
-                    .children(Self::render_icon(has_left_icon, false, None, window, cx))
-                    .child(div().flex_1().child(label.clone())),
-            ),
+            PopupMenuItem::Label(label) => {
+                this.h(item_height).disabled(true).cursor_default().child(
+                    h_flex()
+                        .cursor_default()
+                        .items_center()
+                        .gap_x(icon_gap)
+                        .children(Self::render_icon(has_left_icon, false, None, window, cx))
+                        .child(div().flex_1().child(label.clone())),
+                )
+            }
             PopupMenuItem::ElementItem {
                 render,
                 icon,
@@ -1406,7 +1414,7 @@ impl PopupMenu {
                         .flex_1()
                         .min_h(item_height)
                         .items_center()
-                        .gap_x_1()
+                        .gap_x(icon_gap)
                         .children(Self::render_icon(
                             has_left_icon,
                             is_left_check,
@@ -1436,7 +1444,7 @@ impl PopupMenu {
                 })
                 .disabled(*disabled)
                 .h(item_height)
-                .gap_x_1()
+                .gap_x(icon_gap)
                 .children(Self::render_icon(
                     has_left_icon,
                     is_left_check,
@@ -1488,7 +1496,7 @@ impl PopupMenu {
                         .min_h(item_height)
                         .size_full()
                         .items_center()
-                        .gap_x_1()
+                        .gap_x(icon_gap)
                         .children(Self::render_icon(
                             has_left_icon,
                             false,
@@ -1595,7 +1603,7 @@ impl Render for PopupMenu {
             radius: cx.theme().radius.min(px(8.)),
         };
 
-        v_flex()
+        let menu = v_flex()
             .id("popup-menu")
             .test_support()
             .role(Role::Menu)
@@ -1615,8 +1623,7 @@ impl Render for PopupMenu {
             .child(
                 v_flex()
                     .id("items")
-                    .p_1()
-                    .gap_y_0p5()
+                    .p(to_whole_pixels(rems(0.25), window))
                     .min_w(rems(8.))
                     .when_some(self.min_width, |this, min_width| this.min_w(min_width))
                     .map(|this| match self.max_width {
@@ -1654,7 +1661,8 @@ impl Render for PopupMenu {
             )
             .when(self.scrollable, |this| {
                 this.vertical_scrollbar(&self.scroll_handle)
-            })
+            });
+        WholePixelOrigin::new(menu)
     }
 }
 
@@ -1727,5 +1735,62 @@ mod tests {
         );
         assert_eq!(PopupMenuItem::separator().a11y_label(), None);
         assert_eq!(PopupMenuItem::element(|_, _| div()).a11y_label(), None);
+    }
+
+    #[cfg(feature = "test-support")]
+    struct OffGridHost {
+        menu: Entity<PopupMenu>,
+    }
+
+    #[cfg(feature = "test-support")]
+    impl Render for OffGridHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(
+                anchored()
+                    .position(gpui::point(px(10.3), px(20.7)))
+                    .child(self.menu.clone()),
+            )
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    #[gpui::test]
+    fn items_and_separators_lie_on_whole_pixels_at_a_15px_rem(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::init);
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            window.set_rem_size(px(15.));
+            let menu = cx.new(|cx| {
+                PopupMenu::new(cx)
+                    .item(PopupMenuItem::new("Reply"))
+                    .item(PopupMenuItem::new("Forward"))
+                    .separator()
+                    .item(PopupMenuItem::new("Copy"))
+                    .separator()
+                    .item(PopupMenuItem::new("Delete"))
+            });
+            OffGridHost { menu }
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let items = cx.update(|window, _| {
+            gpui_base::test_support::snapshots(window)
+                .into_iter()
+                .filter(|item| item.role() == Some(Role::MenuItem))
+                .map(|item| (item.label().is_none(), item.bounds()))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(items.len(), 6, "{items:?}");
+        for (is_separator, bounds) in items {
+            assert!(
+                bounds.origin.y.round() == bounds.origin.y
+                    && bounds.size.height.round() == bounds.size.height,
+                "a 1 px line on a half pixel renders as two rows at half contrast: {bounds:?}"
+            );
+            if is_separator {
+                assert_eq!(bounds.size.height, px(1.), "a separator is a hairline");
+            } else {
+                assert_eq!(bounds.size.height, px(24.), "an item is 1.625 rem, rounded");
+            }
+        }
     }
 }
