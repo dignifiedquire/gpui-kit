@@ -4,10 +4,10 @@ use gpui_base::TestSupportExt as _;
 use std::{rc::Rc, sync::LazyLock, time::Duration};
 
 use gpui::{
-    Action, Anchor, AnyElement, App, BoxShadow, ClickEvent, Edges, FocusHandle, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
-    StyleRefinement, Styled, Window, WindowControlArea, anchored, div, hsla, point,
-    prelude::FluentBuilder, px, rems,
+    Action, Anchor, AnyElement, App, BoxShadow, ClickEvent, Decorations, Div, Edges, Entity,
+    FocusHandle, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
+    RenderOnce, SharedString, StyleRefinement, Styled, Window, WindowControlArea, anchored, div,
+    hsla, point, prelude::FluentBuilder, px, rems,
 };
 use gpui_base::{ElementExt as _, LogicalStyledExt as _, TextSelectionScopeId, motion::Transition};
 use rust_i18n::t;
@@ -654,6 +654,40 @@ impl Dialog {
     }
 }
 
+/// Makes the band of `overlay` that lies over the title bar, from `top` down,
+/// drag the window on a press and a move, maximize it on a double-click and
+/// open the window menu on a right-click.
+fn title_bar_drag(overlay: Div, armed: Entity<bool>, top: Pixels) -> Div {
+    let is_in_band = move |y: Pixels| y >= top && y < top + TITLE_BAR_HEIGHT;
+    let (pressed, moved, released) = (armed.clone(), armed.clone(), armed);
+    overlay
+        .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+            if !is_in_band(event.position.y) {
+                return;
+            }
+            if event.click_count == 2 {
+                pressed.update(cx, |armed, _| *armed = false);
+                window.zoom_window();
+            } else {
+                pressed.update(cx, |armed, _| *armed = true);
+            }
+        })
+        .on_mouse_move(move |_, window, cx| {
+            if *moved.read(cx) {
+                moved.update(cx, |armed, _| *armed = false);
+                window.start_window_move();
+            }
+        })
+        .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+            released.update(cx, |armed, _| *armed = false);
+        })
+        .on_mouse_down(MouseButton::Right, move |event, window, _| {
+            if is_in_band(event.position.y) && window.window_controls().window_menu {
+                window.show_window_menu(event.position);
+            }
+        })
+}
+
 impl RenderOnce for Dialog {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         if let Some(trigger) = self.trigger.take() {
@@ -726,6 +760,14 @@ impl RenderOnce for Dialog {
             .iter()
             .rposition(|dialog| !dialog.closing);
         let is_topmost = !closing && topmost == Some(layer_ix);
+        // GPUI ignores `WindowControlArea::Drag` on Linux, so the title bar band
+        // of the dim moves a client-decorated window itself.
+        let drag_band = (cfg!(target_os = "linux")
+            && matches!(window.window_decorations(), Decorations::Client { .. }))
+        .then(|| {
+            let armed = window.use_keyed_state(("dialog-title-bar", layer_ix), cx, |_, _| false);
+            (armed, window_paddings.top)
+        });
 
         anchored()
             .position(point(window_paddings.left, window_paddings.top))
@@ -766,6 +808,9 @@ impl RenderOnce for Dialog {
                                         .window_control_area(WindowControlArea::Drag)
                                         .when(self.props.overlay_visible, |overlay| {
                                             overlay.bg(overlay_color(true, cx))
+                                        })
+                                        .when_some(drag_band, |overlay, (armed, top)| {
+                                            title_bar_drag(overlay, armed, top)
                                         }),
                                 )
                             })
