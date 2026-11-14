@@ -5,7 +5,7 @@ use std::{rc::Rc, sync::LazyLock, time::Duration};
 
 use gpui::{
     Action, Anchor, AnyElement, App, BoxShadow, ClickEvent, Edges, FocusHandle, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, SharedString,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Point, RenderOnce, SharedString, Size,
     StyleRefinement, Styled, Window, WindowControlArea, anchored, div, hsla, point,
     prelude::FluentBuilder, px, rems,
 };
@@ -267,6 +267,19 @@ impl BaseDialogRoot {
     }
     fn dismiss_below_y(self, value: Pixels) -> Self {
         map_base_root!(self, dismiss_below_y(value))
+    }
+    /// Lays the host out over the window's frame, `size` at `origin`.
+    fn frame(self, origin: Point<Pixels>, size: Size<Pixels>) -> Self {
+        fn place<S: Styled>(host: S, origin: Point<Pixels>, size: Size<Pixels>) -> S {
+            host.left(origin.x)
+                .top(origin.y)
+                .w(size.width)
+                .h(size.height)
+        }
+        match self {
+            Self::Dialog(root) => Self::Dialog(place(root, origin, size)),
+            Self::AlertDialog(root) => Self::AlertDialog(place(root, origin, size)),
+        }
     }
     fn backdrop(self, element: impl IntoElement) -> Self {
         map_base_root!(self, backdrop(element))
@@ -735,10 +748,14 @@ impl RenderOnce for Dialog {
                             .take()
                             .expect("Dialog base host is always present")
                             .layer(self.id, is_topmost)
+                            // The host and its backdrop cover the window's frame only, so a
+                            // client-side shadow stays undimmed and its presses reach the
+                            // window's resize edges.
+                            .frame(point(window_paddings.left, window_paddings.top), view_size)
                             .focus_handle(self.focus_handle.clone())
                             .close_on_escape(self.props.keyboard && !closing)
                             .close_on_backdrop_press(self.props.overlay_closable && !closing)
-                            .dismiss_below_y(TITLE_BAR_HEIGHT)
+                            .dismiss_below_y(window_paddings.top + TITLE_BAR_HEIGHT)
                             .when(self.props.overlay && !closing, |this| {
                                 this.backdrop(
                                     div()
