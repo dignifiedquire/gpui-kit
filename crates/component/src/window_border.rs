@@ -367,6 +367,30 @@ mod tests {
             tiling: Tiling::default(),
         }));
     }
+
+    /// Dialogs cover the frame inside these insets, so a side tiled against
+    /// the screen must have none, or the dim would stop short of the edge.
+    #[test]
+    fn client_frame_insets_leave_tiled_sides_without_a_shadow() {
+        let shadow = px(20.);
+        assert_eq!(
+            client_frame_insets(shadow, &Tiling::default()),
+            Edges::all(shadow)
+        );
+        let left_tiled = Tiling {
+            left: true,
+            ..Tiling::default()
+        };
+        assert_eq!(
+            client_frame_insets(shadow, &left_tiled),
+            Edges {
+                top: shadow,
+                right: shadow,
+                bottom: shadow,
+                left: px(0.),
+            }
+        );
+    }
 }
 
 /// Cursor-only overlay for each resize edge/corner. Resize starts from the backdrop

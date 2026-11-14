@@ -757,7 +757,7 @@ impl RenderOnce for Dialog {
                             .focus_handle(self.focus_handle.clone())
                             .close_on_escape(self.props.keyboard && !closing)
                             .close_on_backdrop_press(self.props.overlay_closable && !closing)
-                            .dismiss_below_y(TITLE_BAR_HEIGHT)
+                            .dismiss_below_y(window_paddings.top + TITLE_BAR_HEIGHT)
                             .when(self.props.overlay && !closing, |this| {
                                 this.backdrop(
                                     div()
