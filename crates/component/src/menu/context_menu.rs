@@ -30,13 +30,14 @@ pub trait ContextMenuExt: InteractiveElement + ParentElement + Styled {
         // The ID must be stable across renders, otherwise the element state
         // (open menu) is lost on every re-render.
         let caller = std::panic::Location::caller();
-        let id = self
-            .interactivity()
-            .element_id
-            .clone()
+        let element_id = self.interactivity().element_id.clone();
+        let is_shared = element_id.is_none();
+        let id = element_id
             .map(|id| ElementId::Name(format!("context-menu-{:?}", id).into()))
             .unwrap_or_else(|| ElementId::CodeLocation(*caller));
-        ContextMenu::new(id, self).menu(f)
+        let mut menu = ContextMenu::new(id, self).menu(f);
+        menu.is_shared = is_shared;
+        menu
     }
 }
 
@@ -50,6 +51,9 @@ pub struct ContextMenu<E: ParentElement + Styled + Sized> {
     // This is not in use, just for style refinement forwarding.
     _ignore_style: StyleRefinement,
     anchor: Anchor,
+    /// Whether other triggers rendered from the same call site share this
+    /// trigger's element state, as triggers without an `ElementId` do.
+    is_shared: bool,
 }
 
 impl<E: ParentElement + Styled> ContextMenu<E> {
@@ -60,6 +64,7 @@ impl<E: ParentElement + Styled> ContextMenu<E> {
             element: Some(element),
             menu: None,
             anchor: Anchor::TopLeft,
+            is_shared: false,
             _ignore_style: StyleRefinement::default(),
         }
     }
@@ -354,8 +359,11 @@ impl<E: ParentElement + Styled + IntoElement + 'static> Element for ContextMenu<
         {
             window.set_focus_handle(trigger_focus, cx);
         }
+        // A trigger with state of its own draws its open menu wherever it moves,
+        // so a row the rows above push down never keeps a focused menu unseen.
         let position = request_layout.shared_state.borrow().position;
-        request_layout.draws_menu.set(bounds.contains(&position));
+        let draws = !self.is_shared || bounds.contains(&position);
+        request_layout.draws_menu.set(draws);
         if let Some(element) = &mut request_layout.element {
             element.prepaint(window, cx);
         }
@@ -865,6 +873,63 @@ mod tests {
         assert!(
             cx.debug_bounds("kbd:ctrl-c").is_some(),
             "the shortcut hint must be painted on the same frame as its item"
+        );
+    }
+
+    /// A row with an id below a band of changing height, as a list row moves
+    /// when a banner above it shows or hides.
+    struct MovingRowRoot {
+        band: Rc<Cell<Pixels>>,
+    }
+
+    impl Render for MovingRowRoot {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(div().h(self.band.get())).child(
+                div()
+                    .id("row")
+                    .w(px(100.))
+                    .h(px(30.))
+                    .context_menu(|menu, _, _| {
+                        menu.item(PopupMenuItem::element(|_, _| {
+                            div()
+                                .debug_selector(|| "row-menu-item".into())
+                                .w(px(80.))
+                                .h(px(20.))
+                                .child("Pin")
+                        }))
+                    }),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn open_menu_stays_drawn_when_its_row_moves_away_from_the_press(cx: &mut TestAppContext) {
+        cx.update(|cx| crate::init(cx));
+        let band = Rc::new(Cell::new(px(0.)));
+        let (_, cx) = cx.add_window_view({
+            let band = band.clone();
+            move |_, _| MovingRowRoot { band }
+        });
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+        });
+        let press = point(px(10.), px(10.));
+        cx.simulate_mouse_down(press, MouseButton::Right, Default::default());
+        cx.simulate_mouse_up(press, MouseButton::Right, Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+        });
+        assert!(cx.debug_bounds("row-menu-item").is_some());
+
+        band.set(px(50.));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        assert!(
+            cx.debug_bounds("row-menu-item").is_some(),
+            "an open menu must stay drawn while it keeps the focus"
         );
     }
 }
