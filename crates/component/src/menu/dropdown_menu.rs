@@ -532,4 +532,50 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(!is_menu_shown(cx), "a resize of the window closes the menu");
     }
+
+    #[cfg(feature = "test-support")]
+    #[gpui::test]
+    fn a_menu_over_its_trigger_neither_shows_nor_takes_the_pointer_while_measured(
+        cx: &mut TestAppContext,
+    ) {
+        let cx = setup_over_trigger(cx);
+
+        cx.simulate_mouse_down(
+            point(px(250.), px(215.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        let first = cx.update(|window, _| {
+            let snapshots = gpui_base::test_support::snapshots(window);
+            assert!(
+                snapshots.iter().all(|element| !element.visible()
+                    || !matches!(
+                        element.role(),
+                        Some(gpui::Role::Menu | gpui::Role::MenuItem)
+                    )),
+                "the menu and its items show only once placed"
+            );
+            snapshots
+                .into_iter()
+                .find(|element| element.label() == Some("Option 0"))
+                .map(|element| element.bounds())
+        });
+        let first = first.expect("the menu lays out its items while measuring them");
+        cx.simulate_mouse_move(first.center(), None, Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        assert!(is_menu_shown(cx));
+        let is_first_selected = cx.update(|window, _| {
+            gpui_base::test_support::snapshots(window)
+                .iter()
+                .any(|element| {
+                    element.label() == Some("Option 0") && element.selected() == Some(true)
+                })
+        });
+        assert!(
+            !is_first_selected,
+            "the pointer over the measured menu reached an item"
+        );
+    }
 }
