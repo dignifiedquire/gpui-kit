@@ -1340,6 +1340,19 @@ pub(crate) mod tests {
         assert!(cx.debug_bounds("dialog-1").is_none());
     }
 
+    #[gpui::test]
+    fn active_dialog_count_counts_stacked_dialogs_but_not_a_closing_one(cx: &mut TestAppContext) {
+        let cx = window(cx, size(px(1000.), px(800.)));
+        cx.update(|_, cx| cx.set_reduce_motion(false));
+        cx.update(|window, cx| assert_eq!(window.active_dialog_count(cx), 0));
+        open(cx, |dialog, _, _| dialog.title("First").child("body"));
+        open(cx, |dialog, _, _| dialog.title("Second").child("body"));
+        cx.update(|window, cx| assert_eq!(window.active_dialog_count(cx), 2));
+        cx.update(|window, cx| window.close_dialog(cx));
+        frame(cx);
+        cx.update(|window, cx| assert_eq!(window.active_dialog_count(cx), 1));
+    }
+
     /// Closing the top of a stack only removes that dialog: the one below stays
     /// mounted and becomes the active dialog for the duration of the exit.
     #[gpui::test]
