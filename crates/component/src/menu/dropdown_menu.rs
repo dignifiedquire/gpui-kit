@@ -124,7 +124,9 @@ where
         cx: &mut App,
     ) -> Popover {
         let builder = self.builder.clone();
-        let over_trigger = self.over_trigger;
+        // A trigger not drawn yet has no bounds to open over, so its menu opens
+        // below it.
+        let over_trigger = self.over_trigger.filter(|_| !trigger_bounds.is_empty());
         let menu_state =
             window.use_keyed_state(self.id.clone(), cx, |_, _| DropdownMenuState::default());
 
