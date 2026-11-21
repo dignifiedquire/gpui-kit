@@ -4,7 +4,7 @@ use crate::actions::{SelectLeft, SelectRight};
 use crate::menu::menu_item::MenuItemElement;
 use crate::scroll::ScrollableElement;
 use crate::whole_pixels::{WholePixelOrigin, to_whole_pixels};
-use crate::{ActiveTheme, ElementExt, Icon, IconName, Sizable as _, h_flex, v_flex};
+use crate::{ActiveTheme, Colorize as _, ElementExt, Icon, IconName, Sizable as _, h_flex, v_flex};
 use crate::{Side, Size, kbd::Kbd};
 use gpui::{
     Action, Anchor, AnyElement, App, AppContext, Bounds, Context, DismissEvent, Edges, Entity,
@@ -1330,6 +1330,11 @@ impl PopupMenu {
         const INNER_PADDING: Rems = rems(0.5);
         const ICON_GAP: Rems = rems(0.5);
         const SEPARATOR_MARGIN: Rems = rems(0.25);
+        // The separator is the menu's own text at low alpha, as macOS draws
+        // menu separators, so that it shows on a light and a dark menu. The
+        // theme's border is tuned for the window's background, darker than a
+        // dark menu's.
+        const SEPARATOR_ALPHA: f32 = 0.12;
         let inner_padding = to_whole_pixels(INNER_PADDING, window);
         let icon_gap = to_whole_pixels(ICON_GAP, window);
 
@@ -1385,7 +1390,7 @@ impl PopupMenu {
                 .my(to_whole_pixels(SEPARATOR_MARGIN, window))
                 .mx(inner_padding)
                 .rounded_none()
-                .bg(cx.theme().border)
+                .bg(cx.theme().popover_foreground.opacity(SEPARATOR_ALPHA))
                 .disabled(true),
             PopupMenuItem::Label(label) => {
                 this.h(item_height).disabled(true).cursor_default().child(
