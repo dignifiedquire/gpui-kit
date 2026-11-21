@@ -1,13 +1,13 @@
 use super::entrance::{DialogEntrance, EntranceSurface};
 use crate::root::WindowState;
 use gpui_base::TestSupportExt as _;
-use std::{cell::Cell, rc::Rc, sync::LazyLock, time::Duration};
+use std::{rc::Rc, sync::LazyLock, time::Duration};
 
 use gpui::{
-    Action, Anchor, AnyElement, App, Bounds, BoxShadow, ClickEvent, Decorations, Div, Edges,
-    Entity, FocusHandle, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels,
-    Point, RenderOnce, SharedString, Size, StyleRefinement, Styled, Window, WindowControlArea,
-    anchored, div, hsla, point, prelude::FluentBuilder, px, rems,
+    Action, Anchor, AnyElement, App, BoxShadow, ClickEvent, Decorations, Div, Edges, Entity,
+    FocusHandle, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
+    RenderOnce, SharedString, Size, StyleRefinement, Styled, Window, WindowControlArea, anchored,
+    div, hsla, point, prelude::FluentBuilder, px, rems,
 };
 use gpui_base::{ElementExt as _, TextSelectionScopeId, motion::Transition};
 use rust_i18n::t;
@@ -344,9 +344,6 @@ pub struct Dialog {
     pub(crate) selection_scope: TextSelectionScopeId,
     pub(crate) motion: Option<DialogMotion>,
     pub(crate) id: usize,
-    /// Where the surface was last laid out, kept by the dialog's entry in
-    /// the window state.
-    pub(crate) surface_bounds: Option<Rc<Cell<Option<Bounds<Pixels>>>>>,
 }
 
 pub(crate) fn overlay_color(overlay: bool, cx: &App) -> Hsla {
@@ -395,7 +392,6 @@ impl Dialog {
             button_props: DialogButtonProps::default(),
             motion: None,
             id: 0,
-            surface_bounds: None,
         }
     }
 
@@ -844,11 +840,6 @@ impl RenderOnce for Dialog {
                                         .id("surface")
                                         .test_support()
                                         .debug_selector(move || format!("dialog-{layer_ix}"))
-                                        .when_some(self.surface_bounds.take(), |surface, kept| {
-                                            surface.on_prepaint(move |bounds, _, _| {
-                                                kept.set(Some(bounds));
-                                            })
-                                        })
                                         .bg(cx.theme().tokens.background)
                                         .border_1()
                                         .border_color(cx.theme().border)
@@ -1347,18 +1338,6 @@ pub(crate) mod tests {
         });
         assert_eq!(surface(cx, 0).top(), px(80.));
         assert!(cx.debug_bounds("dialog-1").is_none());
-    }
-
-    #[gpui::test]
-    fn active_dialog_bounds_are_the_top_surface_once_laid_out(cx: &mut TestAppContext) {
-        let cx = window(cx, size(px(1000.), px(800.)));
-        cx.update(|window, cx| assert_eq!(window.active_dialog_bounds(cx), None));
-        open(cx, |dialog, _, _| dialog.title("First").child("body"));
-        frame(cx);
-        let surface = cx.debug_bounds("dialog-0").expect("the surface is drawn");
-        // The bounds are measured inside the surface's 1 px border.
-        let inside = surface.inset(px(1.));
-        cx.update(|window, cx| assert_eq!(window.active_dialog_bounds(cx), Some(inside)));
     }
 
     #[gpui::test]
