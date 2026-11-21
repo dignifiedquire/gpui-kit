@@ -317,8 +317,8 @@ impl Element for TriggerFocus {
 mod tests {
     use super::*;
     use gpui::{
-        KeyBinding, MouseButton, ParentElement as _, Render, TestAppContext, WeakEntity, actions,
-        div, point, px,
+        KeyBinding, MouseButton, ParentElement as _, Render, TestAppContext, VisualTestContext,
+        WeakEntity, actions, div, point, px,
     };
     use std::cell::{Cell, RefCell};
 
@@ -460,5 +460,84 @@ mod tests {
             cx.debug_bounds("kbd:ctrl-c").is_some(),
             "the shortcut hint must be painted on the same frame as its item"
         );
+    }
+
+    /// Twelve options opening over their trigger, with option 6 checked.
+    struct OverTriggerRoot;
+
+    impl Render for OverTriggerRoot {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().pt(px(200.)).pl(px(200.)).child(
+                Button::new("trigger")
+                    .label("Option 6")
+                    .w(px(100.))
+                    .h(px(30.))
+                    .dropdown_menu(|menu, _, _| {
+                        (0..12).fold(menu, |menu, ix| {
+                            menu.menu_with_check(
+                                format!("Option {ix}"),
+                                ix == 6,
+                                Box::new(CopyText),
+                            )
+                        })
+                    })
+                    .over_trigger(px(8.)),
+            )
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    fn setup_over_trigger(cx: &mut TestAppContext) -> &mut VisualTestContext {
+        cx.update(|cx| crate::init(cx));
+        let (_, cx) = cx.add_window_view(|_, _| OverTriggerRoot);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx
+    }
+
+    #[cfg(feature = "test-support")]
+    fn open_over_trigger(cx: &mut VisualTestContext) {
+        cx.simulate_click(point(px(250.), px(215.)), Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(is_menu_shown(cx), "the menu opens over its trigger");
+    }
+
+    #[cfg(feature = "test-support")]
+    fn is_menu_shown(cx: &mut VisualTestContext) -> bool {
+        cx.update(|window, _| {
+            gpui_base::test_support::snapshots(window)
+                .iter()
+                .any(|element| element.role() == Some(gpui::Role::Menu) && element.visible())
+        })
+    }
+
+    #[cfg(feature = "test-support")]
+    #[gpui::test]
+    fn a_menu_over_its_trigger_closes_when_its_window_scrolls_or_resizes(cx: &mut TestAppContext) {
+        let cx = setup_over_trigger(cx);
+
+        open_over_trigger(cx);
+        cx.simulate_event(gpui::ScrollEvent {
+            position: point(px(250.), px(215.)),
+            delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-20.))),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(is_menu_shown(cx), "a scroll over the menu scrolls the menu");
+        cx.simulate_event(gpui::ScrollEvent {
+            position: point(px(20.), px(20.)),
+            delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-20.))),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(!is_menu_shown(cx), "a scroll of the window closes the menu");
+
+        open_over_trigger(cx);
+        cx.simulate_resize(gpui::size(px(700.), px(500.)));
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(!is_menu_shown(cx), "a resize of the window closes the menu");
     }
 }

@@ -13,7 +13,10 @@ use gpui::{
     StatefulInteractiveElement, Styled, WeakEntity, Window, anchored, deferred, div, point,
     prelude::FluentBuilder, px, rems, size,
 };
-use gpui::{ClickEvent, Half, MouseDownEvent, OwnedMenuItem, Point, Subscription};
+use gpui::{
+    ClickEvent, DispatchPhase, Half, MouseDownEvent, OwnedMenuItem, Point, ScrollEvent,
+    Subscription, canvas,
+};
 use gpui_base::TestSupportExt as _;
 
 use std::collections::HashSet;
@@ -1097,7 +1100,7 @@ impl PopupMenu {
     /// Places a menu opening over its trigger once its items are measured,
     /// and scrolls it to match. Like `scroll_to_checked_item`, it asks for
     /// another frame until the items are measured.
-    fn place_over_trigger(&mut self, window: &Window, cx: &mut Context<Self>) {
+    fn place_over_trigger(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let ix = self.over_trigger_item();
         let is_trailing_separator = self
             .menu_items
@@ -1153,6 +1156,11 @@ impl PopupMenu {
         }
         over.placement = Some(placement);
         self.scroll_to_checked_frames = 0;
+        // The menu stays where it opened, so it closes when a move or resize of
+        // the window can move its trigger, as does a scroll outside it.
+        let closes =
+            cx.observe_window_bounds(window, |menu, window, cx| menu.dismiss(&Cancel, window, cx));
+        self._subscriptions.push(closes);
     }
 
     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
@@ -1860,6 +1868,28 @@ impl Render for PopupMenu {
             )
             .when(scrollable, |this| {
                 this.vertical_scrollbar(&self.scroll_handle)
+            })
+            .when(placement.is_some(), |this| {
+                let view = cx.entity().downgrade();
+                this.child(
+                    canvas(
+                        |_, _, _| {},
+                        move |bounds, _, window, _| {
+                            window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
+                                if phase == DispatchPhase::Capture
+                                    && !bounds.contains(&event.position)
+                                {
+                                    _ = view
+                                        .update(cx, |menu, cx| menu.dismiss(&Cancel, window, cx));
+                                }
+                            })
+                        },
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
             });
         let menu = match over_trigger {
             Some((trigger, placement)) => anchored()
