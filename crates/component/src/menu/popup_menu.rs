@@ -1089,12 +1089,16 @@ impl PopupMenu {
     }
 
     /// Returns the index of the item a menu opening over its trigger puts on
-    /// the trigger's text.
+    /// the trigger's text: the checked one, or else the first labelled item
+    /// that can be chosen.
     fn over_trigger_item(&self) -> usize {
-        self.menu_items
-            .iter()
-            .position(PopupMenuItem::is_checked)
-            .unwrap_or(0)
+        let checked = self.menu_items.iter().position(PopupMenuItem::is_checked);
+        let labelled = || {
+            self.menu_items
+                .iter()
+                .position(|item| item.is_clickable() && matches!(item, PopupMenuItem::Item { .. }))
+        };
+        checked.or_else(labelled).unwrap_or(0)
     }
 
     /// Places a menu opening over its trigger once its items are measured,
@@ -1999,6 +2003,28 @@ mod tests {
         );
         assert_eq!(PopupMenuItem::separator().a11y_label(), None);
         assert_eq!(PopupMenuItem::element(|_, _| div()).a11y_label(), None);
+    }
+
+    #[gpui::test]
+    fn a_menu_over_its_trigger_without_a_check_puts_its_first_labelled_item_on_the_text(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let menu = cx.update(|cx| {
+            cx.new(|cx| {
+                PopupMenu::new(cx)
+                    .label("Sizes")
+                    .item(PopupMenuItem::new("Tiny").disabled(true))
+                    .item(PopupMenuItem::new("Small"))
+            })
+        });
+
+        cx.update(|cx| {
+            menu.update(cx, |menu, _| {
+                menu.open_over_trigger(setup_trigger(px(200.), px(80.)), px(8.))
+            });
+            assert_eq!(menu.read(cx).over_trigger_item(), 2);
+            assert_eq!(menu.read(cx).selected_index, None);
+        });
     }
 
     #[gpui::test]
