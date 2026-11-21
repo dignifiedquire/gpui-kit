@@ -319,8 +319,8 @@ impl Element for TriggerFocus {
 mod tests {
     use super::*;
     use gpui::{
-        KeyBinding, MouseButton, ParentElement as _, Render, TestAppContext, VisualTestContext,
-        WeakEntity, actions, div, point, px,
+        KeyBinding, MouseButton, ParentElement as _, Render, TestAppContext, WeakEntity, actions,
+        div, point, px,
     };
     use std::cell::{Cell, RefCell};
 
@@ -465,8 +465,10 @@ mod tests {
     }
 
     /// Twelve options opening over their trigger, with option 6 checked.
+    #[cfg(feature = "test-support")]
     struct OverTriggerRoot;
 
+    #[cfg(feature = "test-support")]
     impl Render for OverTriggerRoot {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             div().size_full().pt(px(200.)).pl(px(200.)).child(
@@ -489,7 +491,7 @@ mod tests {
     }
 
     #[cfg(feature = "test-support")]
-    fn setup_over_trigger(cx: &mut TestAppContext) -> &mut VisualTestContext {
+    fn setup_over_trigger(cx: &mut TestAppContext) -> &mut gpui::VisualTestContext {
         cx.update(|cx| crate::init(cx));
         let (_, cx) = cx.add_window_view(|_, _| OverTriggerRoot);
         cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -497,7 +499,7 @@ mod tests {
     }
 
     #[cfg(feature = "test-support")]
-    fn open_over_trigger(cx: &mut VisualTestContext) {
+    fn open_over_trigger(cx: &mut gpui::VisualTestContext) {
         cx.simulate_click(point(px(250.), px(215.)), Default::default());
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -505,7 +507,7 @@ mod tests {
     }
 
     #[cfg(feature = "test-support")]
-    fn is_menu_shown(cx: &mut VisualTestContext) -> bool {
+    fn is_menu_shown(cx: &mut gpui::VisualTestContext) -> bool {
         cx.update(|window, _| {
             gpui_base::test_support::snapshots(window)
                 .iter()
