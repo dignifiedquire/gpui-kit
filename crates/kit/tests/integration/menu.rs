@@ -463,8 +463,8 @@ impl Render for PopUpOptions {
 }
 
 /// The checked option opens on the trigger's text, label on label, and the
-/// list scrolls inside the window around it. The keys still move through the
-/// list and Escape still closes it.
+/// list scrolls inside the window around it. The keys move on from the
+/// checked option, and Escape still closes the menu.
 #[gpui_kit::test]
 async fn a_menu_over_its_trigger_opens_with_its_checked_item_on_the_trigger(
     cx: &mut TestAppContext,
@@ -503,12 +503,9 @@ async fn a_menu_over_its_trigger_opens_with_its_checked_item_on_the_trigger(
         assert!(!window.within("popup-menu").find(0usize).visible());
 
         let mut menu = window.within("popup-menu");
+        assert_eq!(menu.find(30usize).selected(), Some(true));
         menu.press("down", cx);
-        assert_eq!(menu.find(0usize).selected(), Some(true));
-        assert!(
-            menu.find(0usize).visible(),
-            "the selected item scrolls into view"
-        );
+        assert_eq!(menu.find(31usize).selected(), Some(true));
         menu.press("escape", cx);
     })
     .unwrap();
