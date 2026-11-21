@@ -108,6 +108,11 @@ pub trait WindowExt: Sized {
     /// accepts no input and will unmount when the transition finishes.
     fn has_active_dialog(&mut self, cx: &mut App) -> bool;
 
+    /// Returns how many Dialogs are active, stacked one over another.
+    ///
+    /// A dialog that is playing its exit transition is not counted.
+    fn active_dialog_count(&mut self, cx: &mut App) -> usize;
+
     /// Closes the last active Dialog.
     fn close_dialog(&mut self, cx: &mut App);
 
@@ -198,6 +203,15 @@ impl WindowExt for Window {
             .active_dialogs
             .iter()
             .any(|dialog| !dialog.closing)
+    }
+
+    #[inline]
+    fn active_dialog_count(&mut self, cx: &mut App) -> usize {
+        WindowState::read(self, cx)
+            .active_dialogs
+            .iter()
+            .filter(|dialog| !dialog.closing)
+            .count()
     }
 
     #[inline]
