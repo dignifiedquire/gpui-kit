@@ -1347,6 +1347,7 @@ impl PopupMenu {
 
         let this = MenuItemElement::new(ix)
             .relative()
+            .flex_shrink_0()
             .text_sm()
             .py_0()
             .px(inner_padding)
@@ -1797,5 +1798,43 @@ mod tests {
                 assert_eq!(bounds.size.height, px(24.), "an item is 1.625 rem, rounded");
             }
         }
+    }
+
+    #[cfg(feature = "test-support")]
+    #[gpui::test]
+    fn a_scrollable_menu_keeps_its_items_and_separators_at_their_height(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::init);
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            window.set_rem_size(px(15.));
+            let menu = cx.new(|cx| {
+                (0..10).fold(
+                    PopupMenu::new(cx).scrollable(true).max_h(px(100.)),
+                    |menu, ix| {
+                        menu.item(PopupMenuItem::new(format!("Option {ix}")))
+                            .separator()
+                    },
+                )
+            });
+            OffGridHost { menu }
+        });
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let mut heights = cx.update(|window, _| {
+            gpui_base::test_support::snapshots(window)
+                .into_iter()
+                .filter(|item| item.role() == Some(Role::MenuItem))
+                .map(|item| item.bounds().size.height)
+                .collect::<Vec<_>>()
+        });
+        heights.sort();
+        let separators = [px(1.); 9];
+        let items = [px(24.); 10];
+        assert_eq!(
+            heights,
+            [&separators[..], &items[..]].concat(),
+            "the items overflow the menu and scroll, not squeeze to fit it"
+        );
     }
 }
