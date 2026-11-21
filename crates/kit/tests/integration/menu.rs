@@ -438,6 +438,86 @@ fn a_scrollable_menu_opens_on_its_checked_item(cx: &mut TestAppContext) {
     .unwrap();
 }
 
+/// 48 options opening over their trigger in a 480 px high window, as a macOS
+/// pop-up button opens its menu, with option 30 checked.
+struct PopUpOptions;
+impl Render for PopUpOptions {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .items_start()
+            .pt(px(200.))
+            .pl(px(200.))
+            .child(
+                Button::new("options")
+                    .label("Option 30")
+                    .dropdown_menu(|menu, _, _| {
+                        (0..48).fold(menu, |menu, ix| {
+                            menu.menu_with_check(format!("Option {ix}"), ix == 30, Box::new(Save))
+                        })
+                    })
+                    .over_trigger(px(12.)),
+            )
+    }
+}
+
+/// The checked option opens on the trigger's text, label on label, and the
+/// list scrolls inside the window around it. The keys still move through the
+/// list and Escape still closes it.
+#[gpui_kit::test]
+async fn a_menu_over_its_trigger_opens_with_its_checked_item_on_the_trigger(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (handle, _) = common::open_window(cx, Some(size(px(640.), px(480.))), |_, cx| {
+        cx.new(|_| PopUpOptions)
+    });
+    cx.update_window(handle.into(), |_, window, cx| {
+        window.render_frame(cx);
+        window.click("options", cx);
+        // The items are measured on the menu's first frame, and it is placed
+        // on the next one.
+        window.render_frame(cx);
+        let trigger = window.find("options").bounds();
+        let menu = window.find("popup-menu").bounds();
+        let checked = window.within("popup-menu").find(30usize);
+        assert!(checked.visible(), "{checked:?}");
+        assert_eq!(checked.bounds().center().y, trigger.center().y);
+        // An item pads its label 0.5 rem, after a 0.875 rem check and a
+        // 0.5 rem gap.
+        assert_eq!(
+            checked.bounds().left() + px(30.),
+            trigger.left() + px(12.),
+            "the checked label starts where the trigger's text does"
+        );
+        assert!(
+            menu.left() <= trigger.left() && menu.right() >= trigger.right(),
+            "the menu {menu:?} covers the trigger {trigger:?}"
+        );
+        let viewport = gpui_kit::Bounds::new(Default::default(), window.viewport_size());
+        assert!(
+            viewport.contains(&menu.origin) && viewport.contains(&menu.bottom_right()),
+            "the menu {menu:?} scrolls inside the window {viewport:?}"
+        );
+        assert!(!window.within("popup-menu").find(0usize).visible());
+
+        let mut menu = window.within("popup-menu");
+        menu.press("down", cx);
+        assert_eq!(menu.find(0usize).selected(), Some(true));
+        assert!(
+            menu.find(0usize).visible(),
+            "the selected item scrolls into view"
+        );
+        menu.press("escape", cx);
+    })
+    .unwrap();
+    cx.wait_for(handle.into(), Duration::from_secs(1), |window, _| {
+        window.try_find("popup-menu").is_none()
+    })
+    .await;
+}
+
 struct ContextMenuInputs {
     source: Entity<TextareaState>,
     other: Entity<InputState>,

@@ -10,8 +10,8 @@ use gpui::{
     Action, Anchor, AnyElement, App, AppContext, Bounds, Context, DismissEvent, Edges, Entity,
     EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyBinding,
     ParentElement, Pixels, Rems, Render, Role, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, WeakEntity, Window, anchored, deferred, div,
-    prelude::FluentBuilder, px, rems,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, anchored, deferred, div, point,
+    prelude::FluentBuilder, px, rems, size,
 };
 use gpui::{ClickEvent, Half, MouseDownEvent, OwnedMenuItem, Point, Subscription};
 use gpui_base::TestSupportExt as _;
@@ -22,8 +22,12 @@ use std::rc::Rc;
 const CONTEXT: &str = "PopupMenu";
 
 /// How many frames a newly opened scrollable menu waits for its items to be
-/// measured before it gives up scrolling to the checked item.
+/// measured before it gives up scrolling to the checked item, or placing
+/// itself over its trigger.
 const SCROLL_TO_CHECKED_FRAMES: u8 = 4;
+
+/// The space a menu opening over its trigger keeps from the window's edges.
+const WINDOW_MARGIN: Pixels = px(8.);
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([
@@ -286,6 +290,74 @@ impl PopupMenuItem {
     }
 }
 
+/// The trigger a menu opens over, as a macOS pop-up button's menu does.
+struct OverTrigger {
+    trigger: Bounds<Pixels>,
+    /// How far the trigger's text starts from its left edge.
+    text_inset: Pixels,
+    /// The left edge of the label the menu puts on the trigger's text.
+    label_left: Option<Pixels>,
+    placement: Option<OverTriggerPlacement>,
+}
+
+/// The place in the window of a menu opening over its trigger.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct OverTriggerPlacement {
+    bounds: Bounds<Pixels>,
+    /// How far the items scroll, or `None` when they all show.
+    scroll: Option<Pixels>,
+}
+
+impl OverTriggerPlacement {
+    /// Places a menu of `menu_size` inside `viewport` with its point `item` on
+    /// the text of `trigger`, `text_inset` in from its left edge and halfway
+    /// down, and the menu at least reaching the trigger's right edge.
+    fn new(
+        trigger: Bounds<Pixels>,
+        text_inset: Pixels,
+        item: Point<Pixels>,
+        menu_size: gpui::Size<Pixels>,
+        max_height: Option<Pixels>,
+        viewport: Bounds<Pixels>,
+    ) -> Self {
+        let text = point(trigger.left() + text_inset, trigger.center().y);
+        // The menu and its scroll stay on whole pixels, so its 1 px lines stay
+        // sharp, at most half a pixel off the text.
+        let left = (text.x - item.x).round();
+        let width = menu_size
+            .width
+            .max(trigger.right().min(viewport.right()) - left);
+        let top = (text.y - item.y).round();
+        let max_height = max_height
+            .unwrap_or(viewport.size.height)
+            .min(viewport.size.height);
+        let height = menu_size.height.min(max_height);
+        // The part of the menu inside the window while its item is on the text.
+        let shown_top = top.max(viewport.top());
+        let shown_bottom = (top + menu_size.height).min(viewport.bottom());
+        let shown_height = (shown_bottom - shown_top).min(max_height);
+        // A menu too tall for the window scrolls to keep its item on the text,
+        // as long as that shows at least half of what fits. Any other menu
+        // moves into the window, its item off the text as far as that takes.
+        let (y, height) = if menu_size.height > height && shown_height >= height.half() {
+            let y = (text.y - shown_height.half())
+                .min(shown_bottom - shown_height)
+                .max(shown_top);
+            (y.round(), shown_height)
+        } else {
+            let y = top.min(viewport.bottom() - height).max(viewport.top());
+            (y.round(), height)
+        };
+        let scroll = (menu_size.height > height)
+            .then(|| (y - top).max(Pixels::ZERO).min(menu_size.height - height));
+        let x = left.min(viewport.right() - width).max(viewport.left());
+        Self {
+            bounds: Bounds::new(point(x.round(), y), size(width, height)),
+            scroll,
+        }
+    }
+}
+
 pub struct PopupMenu {
     pub(crate) focus_handle: FocusHandle,
     pub(crate) menu_items: Vec<PopupMenuItem>,
@@ -314,9 +386,11 @@ pub struct PopupMenu {
     /// The parent menu of this menu, if this is a submenu
     parent_menu: Option<WeakEntity<Self>>,
     scrollable: bool,
-    /// Frames left to scroll the checked item into view on open. Zero once
-    /// done, so the user's scrolling is not overridden afterwards.
+    /// Frames left to scroll the checked item into view on open, or to place
+    /// the menu over its trigger. Zero once done, so the user's scrolling is
+    /// not overridden afterwards.
     scroll_to_checked_frames: u8,
+    over_trigger: Option<OverTrigger>,
     external_link_icon: bool,
     scroll_handle: ScrollHandle,
     // This will update on render
@@ -361,6 +435,7 @@ impl PopupMenu {
             bounds: Bounds::default(),
             scrollable: false,
             scroll_to_checked_frames: SCROLL_TO_CHECKED_FRAMES,
+            over_trigger: None,
             scroll_handle: ScrollHandle::default(),
             external_link_icon: true,
             size: Size::default(),
@@ -440,6 +515,17 @@ impl PopupMenu {
                 });
             }
         }
+    }
+
+    /// Opens the menu over `trigger`, the label of its checked item, or else
+    /// its first, on the trigger's text `text_inset` in from its left edge.
+    pub(crate) fn open_over_trigger(&mut self, trigger: Bounds<Pixels>, text_inset: Pixels) {
+        self.over_trigger = Some(OverTrigger {
+            trigger,
+            text_inset,
+            label_left: None,
+            placement: None,
+        });
     }
 
     /// Set min width of the popup menu, default is 8rem
@@ -970,7 +1056,7 @@ impl PopupMenu {
     /// are measured on the first prepaint, so until then this asks for another
     /// frame, up to `SCROLL_TO_CHECKED_FRAMES` times.
     fn scroll_to_checked_item(&mut self, cx: &mut Context<Self>) {
-        if !self.scrollable || self.scroll_to_checked_frames == 0 {
+        if !self.scrollable || self.over_trigger.is_some() || self.scroll_to_checked_frames == 0 {
             return;
         }
 
@@ -997,6 +1083,76 @@ impl PopupMenu {
                 cx.notify();
             }
         }
+    }
+
+    /// Returns the index of the item a menu opening over its trigger puts on
+    /// the trigger's text.
+    fn over_trigger_item(&self) -> usize {
+        self.menu_items
+            .iter()
+            .position(PopupMenuItem::is_checked)
+            .unwrap_or(0)
+    }
+
+    /// Places a menu opening over its trigger once its items are measured,
+    /// and scrolls it to match. Like `scroll_to_checked_item`, it asks for
+    /// another frame until the items are measured.
+    fn place_over_trigger(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let ix = self.over_trigger_item();
+        let is_trailing_separator = self
+            .menu_items
+            .last()
+            .is_some_and(|item| item.is_separator());
+        let last_ix = self
+            .menu_items
+            .len()
+            .saturating_sub(1 + usize::from(is_trailing_separator));
+        let menu = self.bounds;
+        let Some(over) = self.over_trigger.as_mut() else {
+            return;
+        };
+        if over.placement.is_some() || self.scroll_to_checked_frames == 0 {
+            return;
+        }
+
+        let handle = &self.scroll_handle;
+        let measured = handle
+            .bounds_for_item(0)
+            .zip(handle.bounds_for_item(ix))
+            .zip(handle.bounds_for_item(last_ix))
+            .filter(|_| !menu.is_empty());
+        let Some(((first, checked), last)) = measured else {
+            self.scroll_to_checked_frames -= 1;
+            cx.notify();
+            return;
+        };
+
+        // The menu opens unscrolled, so these are the bounds of its whole list.
+        let padding = first.top() - menu.top();
+        let menu_size = size(menu.size.width, last.bottom() + padding - menu.top());
+        let item = point(
+            over.label_left.unwrap_or(checked.left()) - menu.left(),
+            checked.center().y - menu.top(),
+        );
+        let margin = WINDOW_MARGIN + window.client_inset().unwrap_or_default();
+        let viewport = window.viewport_size();
+        let viewport = Bounds::from_corners(
+            point(margin, margin),
+            point(viewport.width - margin, viewport.height - margin),
+        );
+        let placement = OverTriggerPlacement::new(
+            over.trigger,
+            over.text_inset,
+            item,
+            menu_size,
+            self.max_height,
+            viewport,
+        );
+        if let Some(scroll) = placement.scroll {
+            self.scroll_handle.set_offset(point(Pixels::ZERO, -scroll));
+        }
+        over.placement = Some(placement);
+        self.scroll_to_checked_frames = 0;
     }
 
     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
@@ -1480,7 +1636,17 @@ impl PopupMenu {
                                     ),
                             )
                         })
-                        .children(key),
+                        .children(key)
+                        .when(options.over_trigger_item == Some(ix), |this| {
+                            let view = cx.entity().downgrade();
+                            this.on_prepaint(move |bounds, _, cx| {
+                                _ = view.update(cx, |menu, _| {
+                                    if let Some(over) = menu.over_trigger.as_mut() {
+                                        over.label_left = Some(bounds.left());
+                                    }
+                                });
+                            })
+                        }),
                 )
             }
             PopupMenuItem::Submenu {
@@ -1564,6 +1730,7 @@ struct RenderOptions {
     has_left_icon: bool,
     check_side: Side,
     radius: Pixels,
+    over_trigger_item: Option<usize>,
 }
 
 impl Render for PopupMenu {
@@ -1589,14 +1756,30 @@ impl Render for PopupMenu {
         }
 
         self.scroll_to_checked_item(cx);
+        self.place_over_trigger(window, cx);
 
         let view = cx.entity().clone();
         let items_count = self.menu_items.len();
 
-        let max_height = self.max_height.unwrap_or_else(|| {
-            let window_half_height = window.window_bounds().get_bounds().size.height * 0.5;
-            window_half_height.min(rems(28.125).to_pixels(window.rem_size()))
-        });
+        let over_trigger = self
+            .over_trigger
+            .as_ref()
+            .map(|over| (over.trigger, over.placement));
+        let placement = over_trigger.and_then(|(_, placement)| placement);
+        // The menu shows once placed, or once it gives up waiting for its items.
+        let is_measuring = over_trigger.is_some_and(|(_, placement)| placement.is_none())
+            && self.scroll_to_checked_frames > 0;
+        let scrollable = match over_trigger {
+            Some(_) => placement.is_some_and(|placement| placement.scroll.is_some()),
+            None => self.scrollable,
+        };
+        let max_height = match placement {
+            Some(placement) => placement.bounds.size.height,
+            None => self.max_height.unwrap_or_else(|| {
+                let window_half_height = window.window_bounds().get_bounds().size.height * 0.5;
+                window_half_height.min(rems(28.125).to_pixels(window.rem_size()))
+            }),
+        };
 
         let has_left_icon = self
             .menu_items
@@ -1607,6 +1790,7 @@ impl Render for PopupMenu {
             has_left_icon,
             check_side: self.check_side,
             radius: cx.theme().radius.min(px(8.)),
+            over_trigger_item: over_trigger.map(|_| self.over_trigger_item()),
         };
 
         let menu = v_flex()
@@ -1626,6 +1810,7 @@ impl Render for PopupMenu {
             .text_color(cx.theme().popover_foreground)
             .relative()
             .occlude()
+            .when(is_measuring, |this| this.opacity(0.))
             .child(
                 v_flex()
                     .id("items")
@@ -1636,7 +1821,15 @@ impl Render for PopupMenu {
                         Some(max_width) => this.max_w(max_width),
                         None => this.max_w(rems(31.25)),
                     })
-                    .when(self.scrollable, |this| {
+                    .when_some(placement, |this, placement| {
+                        this.min_w(placement.bounds.size.width)
+                    })
+                    // The items of a menu opening over its trigger are measured
+                    // through the scroll handle, scrolling or not.
+                    .when(over_trigger.is_some(), |this| {
+                        this.track_scroll(&self.scroll_handle)
+                    })
+                    .when(scrollable, |this| {
                         this.max_h(max_height)
                             .overflow_y_scroll()
                             .track_scroll(&self.scroll_handle)
@@ -1665,9 +1858,17 @@ impl Render for PopupMenu {
                         });
                     }),
             )
-            .when(self.scrollable, |this| {
+            .when(scrollable, |this| {
                 this.vertical_scrollbar(&self.scroll_handle)
             });
+        let menu = match over_trigger {
+            Some((trigger, placement)) => anchored()
+                .position(placement.map_or(trigger.origin, |placement| placement.bounds.origin))
+                .snap_to_window_with_margin(Edges::all(WINDOW_MARGIN))
+                .child(menu)
+                .into_any_element(),
+            None => menu.into_any_element(),
+        };
         WholePixelOrigin::new(menu)
     }
 }
@@ -1741,6 +1942,150 @@ mod tests {
         );
         assert_eq!(PopupMenuItem::separator().a11y_label(), None);
         assert_eq!(PopupMenuItem::element(|_, _| div()).a11y_label(), None);
+    }
+
+    fn setup_viewport() -> Bounds<Pixels> {
+        Bounds::from_corners(point(px(8.), px(8.)), point(px(632.), px(472.)))
+    }
+
+    fn setup_trigger(top: Pixels, width: Pixels) -> Bounds<Pixels> {
+        Bounds::new(point(px(100.), top), size(width, px(28.)))
+    }
+
+    #[test]
+    fn a_menu_that_fits_opens_with_its_item_on_the_trigger_s_text() {
+        let placement = OverTriggerPlacement::new(
+            setup_trigger(px(200.), px(80.)),
+            px(8.),
+            point(px(30.), px(64.)),
+            size(px(120.), px(128.)),
+            None,
+            setup_viewport(),
+        );
+
+        assert_eq!(
+            placement,
+            OverTriggerPlacement {
+                bounds: Bounds::new(point(px(78.), px(150.)), size(px(120.), px(128.))),
+                scroll: None,
+            }
+        );
+    }
+
+    #[test]
+    fn a_menu_covers_a_trigger_wider_than_its_items_up_to_the_window_edge() {
+        for (width, right) in [(px(200.), px(300.)), (px(600.), px(632.))] {
+            let placement = OverTriggerPlacement::new(
+                setup_trigger(px(200.), width),
+                px(8.),
+                point(px(30.), px(64.)),
+                size(px(120.), px(128.)),
+                None,
+                setup_viewport(),
+            );
+
+            assert_eq!(
+                placement.bounds.left(),
+                px(78.),
+                "the label stays on the text"
+            );
+            assert_eq!(placement.bounds.right(), right);
+        }
+    }
+
+    #[test]
+    fn a_menu_that_fits_moves_into_the_window_off_the_trigger() {
+        let placement = OverTriggerPlacement::new(
+            setup_trigger(px(440.), px(80.)),
+            px(8.),
+            point(px(30.), px(112.)),
+            size(px(120.), px(248.)),
+            None,
+            setup_viewport(),
+        );
+
+        assert_eq!(placement.bounds.bottom(), setup_viewport().bottom());
+        assert_eq!(placement.scroll, None, "a menu that fits never scrolls");
+    }
+
+    #[test]
+    fn a_menu_too_tall_for_the_window_scrolls_its_item_onto_the_trigger() {
+        let trigger = setup_trigger(px(200.), px(80.));
+        let item = point(px(30.), px(736.));
+        let placement = OverTriggerPlacement::new(
+            trigger,
+            px(8.),
+            item,
+            size(px(120.), px(1160.)),
+            None,
+            setup_viewport(),
+        );
+
+        assert_eq!(
+            placement.bounds,
+            Bounds::new(point(px(78.), px(8.)), size(px(120.), px(464.))),
+            "the menu fills the window"
+        );
+        let shown = placement.bounds.top() + item.y - placement.scroll.unwrap_or_default();
+        assert_eq!(shown, trigger.center().y);
+    }
+
+    #[test]
+    fn a_menu_near_the_end_of_its_items_ends_with_its_last_one() {
+        let trigger = setup_trigger(px(200.), px(80.));
+        let item = point(px(30.), px(1096.));
+        let menu_size = size(px(120.), px(1160.));
+        let placement =
+            OverTriggerPlacement::new(trigger, px(8.), item, menu_size, None, setup_viewport());
+
+        let scroll = placement.scroll.unwrap_or_default();
+        assert_eq!(placement.bounds.top() + item.y - scroll, trigger.center().y);
+        assert_eq!(
+            scroll + placement.bounds.size.height,
+            menu_size.height,
+            "the menu is scrolled to its end, not stretched past it"
+        );
+        assert!(placement.bounds.bottom() < setup_viewport().bottom());
+    }
+
+    #[test]
+    fn a_capped_menu_centres_its_item_on_the_trigger() {
+        let trigger = setup_trigger(px(200.), px(80.));
+        let item = point(px(30.), px(736.));
+        let placement = OverTriggerPlacement::new(
+            trigger,
+            px(8.),
+            item,
+            size(px(120.), px(1160.)),
+            Some(px(160.)),
+            setup_viewport(),
+        );
+
+        assert_eq!(placement.bounds.size.height, px(160.));
+        assert_eq!(placement.bounds.center().y, trigger.center().y);
+        let scroll = placement.scroll.unwrap_or_default();
+        assert_eq!(placement.bounds.top() + item.y - scroll, trigger.center().y);
+    }
+
+    #[test]
+    fn a_menu_too_tall_beside_a_window_edge_fills_the_window_off_the_trigger() {
+        let placement = OverTriggerPlacement::new(
+            setup_trigger(px(440.), px(80.)),
+            px(8.),
+            point(px(30.), px(40.)),
+            size(px(120.), px(1160.)),
+            None,
+            setup_viewport(),
+        );
+
+        assert_eq!(
+            placement,
+            OverTriggerPlacement {
+                bounds: Bounds::new(point(px(78.), px(8.)), size(px(120.), px(464.))),
+                scroll: Some(Pixels::ZERO),
+            },
+            "two rows on the trigger would hide the rest of the list"
+        );
     }
 
     #[cfg(feature = "test-support")]

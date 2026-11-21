@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    Anchor, AnyElement, App, Context, DismissEvent, Element, ElementId, Entity, FocusHandle,
-    Focusable, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, LayoutId,
-    RenderOnce, SharedString, Styled, Window, prelude::FluentBuilder,
+    Anchor, AnyElement, App, Bounds, Context, DismissEvent, Element, ElementId, Entity,
+    FocusHandle, Focusable, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
+    LayoutId, Pixels, RenderOnce, SharedString, Styled, Window, prelude::FluentBuilder,
 };
 
 use crate::{Selectable, button::Button, menu::PopupMenu, popover::Popover};
@@ -39,6 +39,8 @@ pub struct DropdownMenuPopover<T: Selectable + IntoElement + 'static> {
     trigger: T,
     builder: Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>,
     on_open_change: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
+    /// The inset of the trigger's text, for a menu opening over the trigger.
+    over_trigger: Option<Pixels>,
 }
 
 impl<T> DropdownMenuPopover<T>
@@ -57,6 +59,7 @@ where
             trigger,
             builder: Rc::new(builder),
             on_open_change: None,
+            over_trigger: None,
         }
     }
 
@@ -76,6 +79,17 @@ where
         self.on_open_change = Some(Rc::new(callback));
         self
     }
+
+    /// Opens the menu over the trigger as a macOS pop-up button does, with the
+    /// label of its checked item, or else its first, on the trigger's text
+    /// `text_inset` in from the trigger's left edge.
+    ///
+    /// The menu grows to the window's height before it scrolls, unless
+    /// [`PopupMenu::max_h`] caps it.
+    pub fn over_trigger(mut self, text_inset: impl Into<Pixels>) -> Self {
+        self.over_trigger = Some(text_inset.into());
+        self
+    }
 }
 
 #[derive(Default)]
@@ -88,10 +102,13 @@ where
     T: Selectable + IntoElement + 'static,
 {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        TriggerFocus::new(self.id.clone(), move |trigger_focus, window, cx| {
-            self.render_popover(trigger_focus, window, cx)
-                .into_any_element()
-        })
+        TriggerFocus::new(
+            self.id.clone(),
+            move |trigger_focus, trigger_bounds, window, cx| {
+                self.render_popover(trigger_focus, trigger_bounds, window, cx)
+                    .into_any_element()
+            },
+        )
     }
 }
 
@@ -102,10 +119,12 @@ where
     fn render_popover(
         self,
         trigger_focus: FocusHandle,
+        trigger_bounds: Bounds<Pixels>,
         window: &mut Window,
         cx: &mut App,
     ) -> Popover {
         let builder = self.builder.clone();
+        let over_trigger = self.over_trigger;
         let menu_state =
             window.use_keyed_state(self.id.clone(), cx, |_, _| DropdownMenuState::default());
 
@@ -132,7 +151,10 @@ where
                             builder(menu, window, cx)
                         });
                         menu.update(cx, |menu, cx| {
-                            menu.set_trigger_focus(Some(trigger_focus.clone()), cx)
+                            menu.set_trigger_focus(Some(trigger_focus.clone()), cx);
+                            if let Some(text_inset) = over_trigger {
+                                menu.open_over_trigger(trigger_bounds, text_inset);
+                            }
                         });
                         menu_state.update(cx, |state, _| {
                             state.menu = Some(menu.clone());
@@ -173,13 +195,15 @@ where
     }
 }
 
-type TriggerFocusBuild = Box<dyn FnOnce(FocusHandle, &mut Window, &mut App) -> AnyElement>;
+type TriggerFocusBuild =
+    Box<dyn FnOnce(FocusHandle, Bounds<Pixels>, &mut Window, &mut App) -> AnyElement>;
 
 /// Registers a focus handle on the trigger's dispatch node without ever
 /// focusing it, so the menu opened from the trigger can resolve its shortcut
 /// hints against the trigger's key contexts on the frame it opens. GPUI looks
 /// a handle up in the previously rendered frame; the trigger was in it when
-/// the menu was not yet.
+/// the menu was not yet. It also hands on the trigger's bounds as last drawn,
+/// for a menu opening over the trigger.
 struct TriggerFocus {
     id: ElementId,
     build: Option<TriggerFocusBuild>,
@@ -188,6 +212,7 @@ struct TriggerFocus {
 #[derive(Default)]
 struct TriggerFocusState {
     focus_handle: Option<FocusHandle>,
+    bounds: Bounds<Pixels>,
 }
 
 struct TriggerFocusFrame {
@@ -198,7 +223,7 @@ struct TriggerFocusFrame {
 impl TriggerFocus {
     fn new(
         id: ElementId,
-        build: impl FnOnce(FocusHandle, &mut Window, &mut App) -> AnyElement + 'static,
+        build: impl FnOnce(FocusHandle, Bounds<Pixels>, &mut Window, &mut App) -> AnyElement + 'static,
     ) -> Self {
         Self {
             id,
@@ -234,17 +259,17 @@ impl Element for TriggerFocus {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let focus_handle =
+        let (focus_handle, bounds) =
             window.with_optional_element_state::<TriggerFocusState, _>(id, |state, _| {
                 let mut state = state.flatten().unwrap_or_default();
                 let focus_handle = state
                     .focus_handle
                     .get_or_insert_with(|| cx.focus_handle())
                     .clone();
-                (focus_handle, Some(state))
+                ((focus_handle, state.bounds), Some(state))
             });
         let build = self.build.take().expect("TriggerFocus is laid out once");
-        let mut child = build(focus_handle.clone(), window, cx);
+        let mut child = build(focus_handle.clone(), bounds, window, cx);
         let layout_id = child.request_layout(window, cx);
 
         (
@@ -258,13 +283,18 @@ impl Element for TriggerFocus {
 
     fn prepaint(
         &mut self,
-        _: Option<&GlobalElementId>,
+        id: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        _: gpui::Bounds<gpui::Pixels>,
+        bounds: Bounds<Pixels>,
         frame: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) {
+        window.with_optional_element_state::<TriggerFocusState, _>(id, |state, _| {
+            let mut state = state.flatten().unwrap_or_default();
+            state.bounds = bounds;
+            ((), Some(state))
+        });
         window.set_focus_handle(&frame.focus_handle, cx);
         frame.child.prepaint(window, cx);
     }
