@@ -66,6 +66,8 @@ pub(crate) struct ActiveDialog {
     /// `DialogEntrance::None`, reduced motion, and a zero theme duration all
     /// close in a single frame.
     exit_enabled: Rc<Cell<bool>>,
+    /// Where the dialog's surface was last laid out.
+    surface_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Retained after closing until its exit transition finishes.
     pub(crate) closing: bool,
 }
@@ -85,8 +87,14 @@ impl ActiveDialog {
             selection_scope,
             builder: Rc::new(builder),
             exit_enabled: Rc::new(Cell::new(false)),
+            surface_bounds: Rc::new(Cell::new(None)),
             closing: false,
         }
+    }
+
+    /// Returns where the dialog's surface was last laid out.
+    pub(crate) fn surface_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.surface_bounds.get()
     }
 
     #[cfg(test)]
@@ -275,6 +283,7 @@ impl WindowState {
                 stack_depth += 1;
             }
             dialog.id = active_dialog.id;
+            dialog.surface_bounds = Some(active_dialog.surface_bounds.clone());
 
             // Refreshed every frame so closing decides in one step whether an
             // exit transition has to play at all.

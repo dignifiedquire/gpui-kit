@@ -6,7 +6,7 @@ use crate::{
     notification::Notification,
     sheet::Sheet,
 };
-use gpui::{App, ElementId, Entity, Window};
+use gpui::{App, Bounds, ElementId, Entity, Pixels, Window};
 use std::rc::Rc;
 
 /// Extension trait for [`Window`] to add dialog, sheet .. functionality.
@@ -113,6 +113,10 @@ pub trait WindowExt: Sized {
     /// A dialog that is playing its exit transition is not counted.
     fn active_dialog_count(&mut self, cx: &mut App) -> usize;
 
+    /// Returns where the topmost active Dialog's surface was last laid out,
+    /// or `None` without an active Dialog or before its first frame.
+    fn active_dialog_bounds(&mut self, cx: &mut App) -> Option<Bounds<Pixels>>;
+
     /// Closes the last active Dialog.
     fn close_dialog(&mut self, cx: &mut App);
 
@@ -212,6 +216,15 @@ impl WindowExt for Window {
             .iter()
             .filter(|dialog| !dialog.closing)
             .count()
+    }
+
+    #[inline]
+    fn active_dialog_bounds(&mut self, cx: &mut App) -> Option<Bounds<Pixels>> {
+        WindowState::read(self, cx)
+            .active_dialogs
+            .iter()
+            .rfind(|dialog| !dialog.closing)
+            .and_then(|dialog| dialog.surface_bounds())
     }
 
     #[inline]
