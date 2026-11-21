@@ -4,7 +4,7 @@ use crate::actions::{SelectLeft, SelectRight};
 use crate::menu::menu_item::MenuItemElement;
 use crate::scroll::ScrollableElement;
 use crate::whole_pixels::{WholePixelOrigin, to_whole_pixels};
-use crate::{ActiveTheme, Colorize as _, ElementExt, Icon, IconName, Sizable as _, h_flex, v_flex};
+use crate::{ActiveTheme, ElementExt, Icon, IconName, Sizable as _, h_flex, v_flex};
 use crate::{Side, Size, kbd::Kbd};
 use gpui::{
     Action, Anchor, AnyElement, App, AppContext, Bounds, Context, DismissEvent, Edges, Entity,
