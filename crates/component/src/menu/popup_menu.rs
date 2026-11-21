@@ -520,8 +520,9 @@ impl PopupMenu {
         }
     }
 
-    /// Opens the menu over `trigger`, the label of its checked item, or else
-    /// its first, on the trigger's text `text_inset` in from its left edge.
+    /// Opens the menu over `trigger` with its checked item selected, the
+    /// label of its checked item, or else its first, on the trigger's text
+    /// `text_inset` in from its left edge.
     pub(crate) fn open_over_trigger(&mut self, trigger: Bounds<Pixels>, text_inset: Pixels) {
         self.over_trigger = Some(OverTrigger {
             trigger,
@@ -529,6 +530,7 @@ impl PopupMenu {
             label_left: None,
             placement: None,
         });
+        self.selected_index = self.menu_items.iter().position(PopupMenuItem::is_checked);
     }
 
     /// Set min width of the popup menu, default is 8rem
@@ -2003,6 +2005,24 @@ mod tests {
         );
         assert_eq!(PopupMenuItem::separator().a11y_label(), None);
         assert_eq!(PopupMenuItem::element(|_, _| div()).a11y_label(), None);
+    }
+
+    #[gpui::test]
+    fn a_menu_over_its_trigger_opens_with_its_checked_item_selected(cx: &mut gpui::TestAppContext) {
+        let menu = cx.update(|cx| {
+            cx.new(|cx| {
+                PopupMenu::new(cx)
+                    .item(PopupMenuItem::new("Small"))
+                    .item(PopupMenuItem::new("Large").checked(true))
+            })
+        });
+
+        cx.update(|cx| {
+            menu.update(cx, |menu, _| {
+                menu.open_over_trigger(setup_trigger(px(200.), px(80.)), px(8.))
+            });
+            assert_eq!(menu.read(cx).selected_index, Some(1));
+        });
     }
 
     #[gpui::test]
