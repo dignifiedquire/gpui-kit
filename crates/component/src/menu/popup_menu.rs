@@ -1818,7 +1818,6 @@ impl Render for PopupMenu {
             .text_color(cx.theme().popover_foreground)
             .relative()
             .occlude()
-            .when(is_measuring, |this| this.opacity(0.))
             .child(
                 v_flex()
                     .id("items")
@@ -1892,10 +1891,18 @@ impl Render for PopupMenu {
                 )
             });
         let menu = match over_trigger {
-            Some((trigger, placement)) => anchored()
-                .position(placement.map_or(trigger.origin, |placement| placement.bounds.origin))
-                .snap_to_window_with_margin(Edges::all(WINDOW_MARGIN))
-                .child(menu)
+            // While its items are measured, the menu is clipped away, so it
+            // neither shows nor takes the pointer.
+            Some((trigger, placement)) => div()
+                .when(is_measuring, |this| this.size_0().overflow_hidden())
+                .child(
+                    anchored()
+                        .position(
+                            placement.map_or(trigger.origin, |placement| placement.bounds.origin),
+                        )
+                        .snap_to_window_with_margin(Edges::all(WINDOW_MARGIN))
+                        .child(menu),
+                )
                 .into_any_element(),
             None => menu.into_any_element(),
         };
