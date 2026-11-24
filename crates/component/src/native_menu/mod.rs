@@ -213,14 +213,20 @@ impl NativeMenu {
         }
         #[cfg(target_os = "windows")]
         {
-            windows::show(
-                self.items,
-                cx.asset_source().clone(),
-                position,
-                cx.theme().is_dark(),
-                window,
-                cx,
-            );
+            // `TrackPopupMenuEx` runs a modal loop on the main thread, which tests driving the
+            // app from inside the process cannot reach, and it shows a real menu on the desktop.
+            if cfg!(feature = "test-support") {
+                fallback::show(self.items, position, window, cx);
+            } else {
+                windows::show(
+                    self.items,
+                    cx.asset_source().clone(),
+                    position,
+                    cx.theme().is_dark(),
+                    window,
+                    cx,
+                );
+            }
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         fallback::show(self.items, position, window, cx);

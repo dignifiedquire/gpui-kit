@@ -134,7 +134,7 @@ impl Render for FallbackMenuOverlay {
 }
 
 /// Show the fallback popup menu through [`crate::Root`]'s overlay.
-#[allow(dead_code)] // Only called where the native menu falls back (e.g. Linux).
+#[allow(dead_code)] // Only called where the native menu falls back (Linux, Windows test builds).
 pub(super) fn show(
     items: Vec<NativeMenuItem>,
     position: Point<Pixels>,
