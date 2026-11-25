@@ -58,6 +58,7 @@ impl InputLine {
 
     /// The line's first shaped text, which holds its font size, ascent and
     /// descent.
+    #[cfg(target_os = "macos")]
     pub(crate) fn first_shaped(&self) -> Option<&ShapedLine> {
         match &self.content {
             Content::Text(line) => Some(line),
